@@ -1,20 +1,9 @@
-import os
+
 import jax
 import jax.numpy as jnp
 from jax import random
-from jax.scipy.stats import norm, gamma
-from flax import linen as nn
-from flax.training import train_state, checkpoints
-import optax
-import matplotlib.pyplot as plt
-from typing import List, Any, Tuple
-import math
-import matplotlib.pyplot as plt
-import time
-from mdn import MDN
 
 jax.config.update("jax_enable_x64", True)
-
 
 def gen_mv_normal_normal_data(key,
                               n_samples,

@@ -1,14 +1,5 @@
-import os
-import jax
 import jax.numpy as jnp
-from jax import random
-from jax.scipy.stats import norm, gamma
-from flax import linen as nn
-from flax.training import train_state, checkpoints
-import optax
-import matplotlib.pyplot as plt
-from typing import List, Any, Tuple
-import time
+from flax.training import checkpoints
 
 def load_model(ckpt_dir, model_def, rng_key, hidden_dims= 1 * [8], K = 1, d = 1):
     """

@@ -1,17 +1,11 @@
-import os
 import jax
 import jax.numpy as jnp
-from jax import random
-from jax.scipy.stats import norm, gamma
-from flax import linen as nn
-from flax.training import train_state, checkpoints
-import optax
+from jax.scipy.stats import norm
 import matplotlib.pyplot as plt
-from typing import List, Any, Tuple
-
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from itertools import product
 
 from data import mvn_posterior
 
@@ -234,7 +228,6 @@ def plot_multi_mvn_marginals(model,
     fig.tight_layout()
     return fig, axes
 
-
 def plot_mvn_marginals(model,
                       params,
                       x_vals: jnp.ndarray,
@@ -318,5 +311,52 @@ def plot_mvn_marginals(model,
     fig.tight_layout()
     return fig, axes
 
+def plot_losses(losses_list, path):
 
+    n_plots = len(losses_list)
+
+    # Arrange subplots in a near-square grid
+    n_cols = math.ceil(math.sqrt(n_plots))
+    n_rows = math.ceil(n_plots / n_cols)
+
+    fig, axes = plt.subplots(n_rows, n_cols)
+
+    for idx, (row, col) in enumerate(product(range(n_rows), range(n_cols))):
+
+            losses = losses_list[idx]
+            ax = axes[row, col]
+            n = len(losses)
+            ns = [i for i in range(n)]
+
+            ax.plot(ns, losses, color="red", linewidth=0.5)
+            ax.set_title(f"θ dim {idx}")
+
+            if row == n_rows-1:
+                ax.set_xlabel("Training Step")
+            if col == 0:    
+                ax.set_ylabel("Training Loss")
+    
+    
+    plt.tight_layout()
+    plt.savefig(path + "loss.pdf")
+    plt.close()
+
+
+
+
+def plot_loss(losses, path):
+
+    fig, ax = plt.subplots(1,1)
+
+    n = len(losses)
+    ns = [i for i in range(n)]
+
+    ax.plot(ns, losses, color="red", linewidth=0.5)
+    ax.set_title("Training loss")
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Training Loss")
+
+    plt.tight_layout()
+    plt.savefig(path + "loss.pdf")
+    plt.close()
     

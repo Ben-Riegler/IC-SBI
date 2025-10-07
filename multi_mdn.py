@@ -2,7 +2,6 @@ import os
 import jax
 import jax.numpy as jnp
 from jax import random
-from jax.scipy.stats import norm, gamma
 from flax import linen as nn
 from flax.training import train_state, checkpoints
 import optax
@@ -11,9 +10,8 @@ from typing import List, Any, Tuple
 import math
 import matplotlib.pyplot as plt
 import time
-
-from plots import mvn_posterior, plot_multi_mvn_marginals
 from data import gen_mv_normal_normal_data
+from plots import mvn_posterior, plot_multi_mvn_marginals, plot_mvn_data, plot_loss
 from mdn import MDN
 
 jax.config.update("jax_enable_x64", True)
@@ -40,7 +38,7 @@ def build_vmapped_mdn(d: int, hidden: List[int], K: int):
         @nn.compact
         def __call__(self, x: jnp.ndarray):
             # x (batch, d)
-            logits, means, log_scales = VMapped(self.hidden_dims, self.K)(x) # [batch, d, K]
+            logits, means, log_scales = VMapped(self.hidden_dims, self.K)(x) # (batch, d, K)
             return logits, means, log_scales
 
     return MultiMDN(hidden, K)
@@ -66,8 +64,8 @@ def train_step(state: train_state.TrainState,
         return -jnp.mean(log_lik)
 
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
-
     state = state.apply_gradients(grads=grads)
+
     return state, loss
 
 def create_train_state(rng: Any, model,
@@ -86,20 +84,7 @@ def create_train_state(rng: Any, model,
         tx=tx
     )
 
-def plot_losses(losses):
 
-    fig, ax = plt.subplots(1,1)
-
-    n = len(losses)
-    ns = [i for i in range(n)]
-
-    ax.plot(ns, losses, color="red", linewidth=0.5)
-    ax.set_title("Training loss")
-    ax.set_xlabel("Training Step")
-    ax.set_ylabel("Training Loss")
-
-    plt.savefig(path + "loss.pdf")
-    plt.close()
 
 def train_multi_mdn(rng, model, x_data, θ_data,
               lr, n_epochs, batch_size):
@@ -117,8 +102,8 @@ def train_multi_mdn(rng, model, x_data, θ_data,
             losses.append(loss.item())
         if ep % 10 == 0:
             print(f"Epoch {ep:03d}  loss={loss:.4f}")
-    plot_losses(losses)
-    return state
+    
+    return state, losses
 
 # -- main -------------------------------------------------------------------
 
@@ -150,8 +135,8 @@ if __name__ == "__main__":
 
     print(x_data.shape, θ_data.shape, post_mean.shape, post_var.shape)
 
-    # fig_x, fig_theta = plot_mvn_data(x_data, θ_data, feature_names=[f"dim{i}" for i in range(d)])
-    # plt.show()
+    fig_x, fig_theta = plot_mvn_data(x_data, θ_data, feature_names=[f"dim{i}" for i in range(d)])
+    plt.show()
 
     key, tkey = random.split(key)
 
@@ -160,11 +145,11 @@ if __name__ == "__main__":
                               K = K)
 
     t0 = time.perf_counter()
-    state = train_multi_mdn(tkey, model,
-                      x_data, θ_data,
-                      lr=1e-4, 
-                      n_epochs=epochs, 
-                      batch_size=batch_size)
+    state, losses = train_multi_mdn(tkey, model,
+                                        x_data, θ_data,
+                                        lr=1e-4, 
+                                        n_epochs=epochs, 
+                                        batch_size=batch_size)
     t1 = time.perf_counter()
 
     print(f"Training took {(t1-t0):.2f}")
@@ -182,6 +167,9 @@ if __name__ == "__main__":
     )
 
     print("Saved MultiMDN params to", ckpt_dir)
+
+
+    plot_loss(losses, path)
 
     key, tk = random.split(key)
 

@@ -2,17 +2,17 @@ import os
 import jax
 import jax.numpy as jnp
 from jax import random
-from jax.scipy.stats import norm, gamma
 from flax import linen as nn
 from flax.training import train_state, checkpoints
 import optax
 import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
 import time
+import math
 jax.config.update("jax_enable_x64", True)
 
 from data import gen_mv_normal_normal_data, mvn_posterior
-from plots import plot_mvn_marginals
+from plots import plot_mvn_marginals, plot_losses
 
 # -- model definition --------------------------------------------------------
 
@@ -29,7 +29,7 @@ class MDN(nn.Module):
             h = nn.swish(h)
         h = nn.Dense(self.hidden_dims[-1])(h)
 
-        logits    = nn.Dense(self.K)(h)   # [batch,K]
+        logits    = nn.Dense(self.K)(h)   # (batch,K)
         means     = nn.Dense(self.K)(h)
         log_scales= nn.Dense(self.K)(h)   
 
@@ -46,21 +46,21 @@ def train_step(state: train_state.TrainState,
 
     def loss_fn(params):
         logits, means, log_scales = state.apply_fn(params, x)
-        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True) # [B,K]
-        scales = jnp.exp(log_scales) # [B,K]
+        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True) # (batch,K)
+        scales = jnp.exp(log_scales) # (batch,K)
 
         log_probs = (
             -0.5 * ((y - means)/scales)**2
             - log_scales
             - 0.5 * jnp.log(2*jnp.pi)
-        ) # [B,K]
-        log_lik = jax.nn.logsumexp(log_pi + log_probs, axis=-1) # [B]
+        ) # (batch,K)
+        log_lik = jax.nn.logsumexp(log_pi + log_probs, axis=-1) # (batch,K)
         return -jnp.mean(log_lik)
 
-    grads = jax.grad(loss_fn)(state.params)
 
+    loss, grads = jax.value_and_grad(loss_fn)(state.params)
     state = state.apply_gradients(grads=grads)
-    loss  = loss_fn(state.params)
+
     return state, loss
 
 def create_train_state(rng: Any, model: MDN,
@@ -77,21 +77,6 @@ def create_train_state(rng: Any, model: MDN,
         params=params,
         tx=tx
     )
-
-def plot_losses(losses):
-
-    fig, ax = plt.subplots(1,1)
-
-    n = len(losses)
-    ns = [i for i in range(n)]
-
-    ax.plot(ns, losses, color="red", linewidth=0.5)
-    ax.set_title("Training loss")
-    ax.set_xlabel("Training Step")
-    ax.set_ylabel("Training Loss")
-
-    plt.savefig(path + "loss.pdf")
-
 
 # -- training loop ----------------------------------------------------------
 
@@ -113,8 +98,7 @@ def train_mdn(rng, model, x_data, θ_data,
         if ep % 10 == 0:
             print(f"Epoch {ep:03d}  loss={loss:.4f}")
 
-    plot_losses(losses)
-    return state
+    return state, losses
 
 # -- main -------------------------------------------------------------------
 
@@ -148,6 +132,7 @@ if __name__ == "__main__":
 
     key, tkey = random.split(key)
     par_list = []
+    losses_list = []
     t0 = time.perf_counter()
     for dim in range(d):
 
@@ -155,13 +140,14 @@ if __name__ == "__main__":
                     K=K)
         
         θ_dat = θ_data[:, dim][:, None]
-        state = train_mdn(tkey, model,
-                        x_data, θ_dat,
-                        lr=1e-4, 
-                        n_epochs=epochs, 
-                        batch_size=batch_size)
+        state, losses = train_mdn(tkey, model,
+                                        x_data, θ_dat,
+                                        lr=1e-4, 
+                                        n_epochs=epochs, 
+                                        batch_size=batch_size)
         
         par_list.append(state.params)
+        losses_list.append(losses)
         
         ckpt_dir = os.path.join(path, f"ckpt_mdn_{dim}")
         ckpt_dir = os.path.abspath(ckpt_dir)
@@ -177,6 +163,8 @@ if __name__ == "__main__":
         
     t1 = time.perf_counter()
     print(f"Training took {(t1-t0):.2f}s")
+
+    plot_losses(losses_list, path)
 
 
     key, tk = random.split(key)
