@@ -13,6 +13,8 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+from data import mvn_posterior
+
 def plot_mvn_data(
     x,
     theta,
@@ -146,3 +148,175 @@ def plot_mvn_data(
     fig_th.tight_layout()
 
     return fig_x, fig_th
+
+def plot_multi_mvn_marginals(model,
+                      params,
+                      x_vals: jnp.ndarray,
+                      prior_mean: jnp.ndarray,
+                      prior_L: jnp.ndarray,
+                      model_L: jnp.ndarray,
+                      theta_range=(-10.0, 10.0),
+                      num_points=300):
+    """
+    Plot learned vs true marginal CDFs for each dimension and a set of x's.
+
+    Grid layout: rows=d (dimensions), cols=n (chosen x samples).
+
+    Args
+    ----
+    model: vmapped MultiMDN with outputs (batch, d, K)
+    params: model parameters
+    x_vals: (n, d) subset of x to visualize (choose small n like 4–8)
+    prior_mean: (d, 1)
+    prior_L: (d, d)
+    model_L: (d, d)
+    theta_range: (min, max) for θ grid
+    num_points: number of grid points for CDF curves
+
+    Returns
+    -------
+    fig: matplotlib.figure.Figure
+    axes: array of Axes with shape (d, n)
+    """
+    # Shapes and posterior
+    n, d = x_vals.shape
+    post_mean, post_var = mvn_posterior(x_vals, prior_mean, prior_L, model_L)  # (n,d), (d,d)
+    post_std = jnp.sqrt(jnp.diag(post_var))             # (d,)
+
+    # θ grid
+    θ_grid = jnp.linspace(theta_range[0], theta_range[1], num_points)  # (P,)
+    fig, axes = plt.subplots(d, n, sharey=True, figsize=(3.0*n, 2.6*d))
+    if d==1:
+        axes = axes[None,:]
+
+
+    # Loop over chosen x's (columns)
+    for col, x0 in enumerate(x_vals):
+        x0_b = x0[None, ...]  # (1, d)
+        logits, means, log_scales = model.apply(params, x0_b)  # each: (1, d, K)
+        scales = jnp.exp(log_scales) 
+        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)  # (1, d, K)
+
+        pi = jnp.exp(log_pi)[0]                                             # (d, K)
+        means = means[0]    # (d, K)
+        scales = scales[0]  # (d, K)
+
+        # Loop over dimensions (rows)
+        for row in range(d):
+            ax = axes[row, col] if d > 1 else axes[0, col]
+
+            # True marginal CDF N(μ_post[row], σ_post[row]^2)
+            μp = post_mean[col, row]
+            σp = post_std[row]
+            # standardize and use standard-normal CDF
+            true_cdf = norm.cdf((θ_grid - μp) / σp)  # (P,)
+
+            # Learned mixture CDF
+            μk = means[row]    # (K,)
+            σk = scales[row]   # (K,)
+            comp_cdfs = norm.cdf((θ_grid[:, None] - μk[None, :]) / σk[None, :])  # (P, K)
+            learned_cdf = jnp.sum(pi[row] * comp_cdfs, axis=-1)                  # (P,)
+
+            # Plot
+            ax.plot(θ_grid, true_cdf, linestyle='--', linewidth=1.5, label='True CDF')
+            ax.plot(θ_grid, learned_cdf, linewidth=1.5, label='Learned CDF')
+            if col == 0:
+                ax.set_ylabel(f"dim {row}")
+            if row == d - 1:
+                ax.set_xlabel("θ")
+            if row == 0:
+                ax.set_title(f"x={jnp.round(x0, 2)}")
+            ax.grid(True, linestyle=":", linewidth=0.5)
+
+            if row == 0 and col == 0:
+                ax.legend(loc="lower right", fontsize=8)
+
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_mvn_marginals(model,
+                      params,
+                      x_vals: jnp.ndarray,
+                      prior_mean: jnp.ndarray,
+                      prior_L: jnp.ndarray,
+                      model_L: jnp.ndarray,
+                      theta_range=(-10.0, 10.0),
+                      num_points=300):
+    """
+    Plot learned vs true marginal CDFs for each dimension and a set of x's.
+
+    Grid layout: rows=d (dimensions), cols=n (chosen x samples).
+
+    Args
+    ----
+    model: vmapped MultiMDN with outputs (batch, d, K)
+    params: model parameters
+    x_vals: (n, d) subset of x to visualize (choose small n like 4–8)
+    prior_mean: (d, 1)
+    prior_L: (d, d)
+    model_L: (d, d)
+    theta_range: (min, max) for θ grid
+    num_points: number of grid points for CDF curves
+
+    Returns
+    -------
+    fig: matplotlib.figure.Figure
+    axes: array of Axes with shape (d, n)
+    """
+    # Shapes and posterior
+    n, d = x_vals.shape
+    post_mean, post_var = mvn_posterior(x_vals, prior_mean, prior_L, model_L)  # (n,d), (d,d)
+    post_std = jnp.sqrt(jnp.diag(post_var))             # (d,)
+
+    # θ grid
+    θ_grid = jnp.linspace(theta_range[0], theta_range[1], num_points)  # (P,)
+    fig, axes = plt.subplots(d, n, sharey=True, figsize=(3.0*n, 2.6*d))
+    if d==1:
+        axes = axes[None,:]
+
+
+    # Loop over chosen x's (columns)
+    for col, x0 in enumerate(x_vals):
+        x0_b = x0[None, ...]  # (1, d)
+        
+        # Loop over dimensions (rows)
+        for row in range(d):
+            ax = axes[row, col] if d > 1 else axes[0, col]
+
+            logits, means, log_scales = model.apply(params[row], x0_b)  # each: (d, K)
+            scales = jnp.exp(log_scales) 
+            log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)  # (d, K)
+            pi = jnp.exp(log_pi)                                           # (d, K)
+          
+            # True marginal CDF N(μ_post[row], σ_post[row]^2)
+            μp = post_mean[col, row]
+            σp = post_std[row]
+            # standardize and use standard-normal CDF
+            true_cdf = norm.cdf((θ_grid - μp) / σp)  # (P,)
+
+            # Learned mixture CDF
+            μk = means[row]    # (K,)
+            σk = scales[row]   # (K,)
+            comp_cdfs = norm.cdf((θ_grid[:, None] - μk[None, :]) / σk[None, :])  # (P, K)
+            learned_cdf = jnp.sum(pi[row] * comp_cdfs, axis=-1)                  # (P,)
+
+            # Plot
+            ax.plot(θ_grid, true_cdf, linestyle='--', linewidth=1.5, label='True CDF')
+            ax.plot(θ_grid, learned_cdf, linewidth=1.5, label='Learned CDF')
+            if col == 0:
+                ax.set_ylabel(f"dim {row}")
+            if row == d - 1:
+                ax.set_xlabel("θ")
+            if row == 0:
+                ax.set_title(f"x={jnp.round(x0, 2)}")
+            ax.grid(True, linestyle=":", linewidth=0.5)
+
+            if row == 0 and col == 0:
+                ax.legend(loc="lower right", fontsize=8)
+
+    fig.tight_layout()
+    return fig, axes
+
+
+    
