@@ -8,7 +8,7 @@ import optax
 import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
 import time
-import math
+
 jax.config.update("jax_enable_x64", True)
 
 from data import gen_mv_normal_normal_data, mvn_posterior

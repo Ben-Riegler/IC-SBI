@@ -7,3 +7,6 @@
     - could also just loop of the d easier problems
 
 - of course the task of learning the ammortized MDN is more difficult as the dimensionality of x increases
+
+- only need F_Y(y|x) at selected values x and we can easily produce samples y|x for fixed x
+    - approximate F_Y(y|x) can we constructed cheaply with ECF or softrank approx of it
