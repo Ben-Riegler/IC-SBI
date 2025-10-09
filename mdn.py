@@ -82,6 +82,7 @@ def create_train_state(rng: Any, model: MDN,
 
 def train_mdn(rng, model, x_data, θ_data,
               lr, n_epochs, batch_size):
+    
     state = create_train_state(rng, model, lr, x_shape=x_data.shape)
     n = x_data.shape[0]
 
