@@ -10,8 +10,10 @@ from typing import List, Any, Tuple
 import time
 
 from ecdf import sig_marg_ecdf_vals
+from plots import plot_loss
 
 jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_debug_nans", True)
 
 class generator(nn.Module):
     emb_dim: int
@@ -19,7 +21,7 @@ class generator(nn.Module):
     out_dim: int
 
     @nn.compact
-    def __call__(self, z: jnp.ndrray, x: jnp.ndrray) -> jnp.ndarray: 
+    def __call__(self, z: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray: 
 
         # z: (z_batch, z_dim)
         # x: (batch, x_dim)   
@@ -49,19 +51,22 @@ def train_step(state: train_state.TrainState,
               ) -> Tuple[train_state.TrainState, jnp.ndarray]:
     
     K = z.shape[0]
+    i_idx, j_idx = jnp.triu_indices(K, k=1) # upper triangular indices 
+
+
 
     def loss_fn(params):
         y = state.apply_fn(params, z, x) # (batch, z_batch, y_dim)
         v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
 
-        u = u[:, None, :] # (batch, 1, y_dim)
-        uv = jnp.linalg.vector_norm(u-v, axis=-1) # (batch, z_batch)
+        u_b1d = u[:, None, :] # (batch, 1, y_dim)
+        uv = jnp.linalg.vector_norm(u_b1d-v, axis=-1) # (batch, z_batch)
 
-        dv = v[:, None, :, :] - v[:, :, None, :] # (batch, z_batch, z_batch, y_dim)
-        vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, z_batch, z_batch)
-
+        dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (K^2-K)/2, y_dim)
+        vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (K^2-K)/2)
+  
         uv_m = jnp.mean(uv, axis=-1) # (batch)
-        vv_m = jnp.mean(vv, axis=(-2,-1)) * K/(K-1) # (batch)
+        vv_m = jnp.mean(vv, axis=-1) # (batch)
 
         diff = 2 * uv_m - vv_m # (batch)
 
@@ -102,35 +107,83 @@ def train_generator(key,
                     z_batch_size: int,
                     ):
     
-    Nx = u.shape[0]
-    Nz = z.shape[0]
+    Nx, x_dim = x.shape
+    Nz, z_dim = z.shape
+
 
     losses = []
 
-    state = create_train_state(key, model, learning_rate, z.shape, x.shape)
+    state = create_train_state(key, model, learning_rate, 
+                               (z_batch_size, z_dim),
+                               (batch_size, x_dim)
+                               )
+    n_batches = Nx // batch_size
 
     for epoch in range(n_epochs):
-        key, pkey1, pkey2 = random.split(key)
-        x_idc = random.permutation(pkey1, range(Nx))
-        z_idc = random.permutation(pkey2, range(Nz))
+        key, pkey1, pkey2 = random.split(key, 3)
+        x_idc = random.permutation(pkey1, Nx)
+        z_idc = random.permutation(pkey2, Nz)
 
         x = x[x_idc]
         u = u[x_idc]
         z = z[z_idc]
-        n_batches = Nx // batch_size
+        
 
         for b in range(0, n_batches):
 
-            x_batch = x[b*batch_size, (b+1)*batch_size]
-            u_batch = u[b*batch_size, (b+1)*batch_size]
-            z_batch = z[b*z_batch_size, (b+1)*z_batch_size]
+            x_batch = x[b*batch_size : (b+1)*batch_size]
+            u_batch = u[b*batch_size : (b+1)*batch_size]
+            z_batch = z[b*z_batch_size : (b+1)*z_batch_size]
 
             state, loss = train_step(state=state, u=u_batch, x=x_batch, z=z_batch)
 
             losses.append(loss)
 
-        if epoch % 10 == 0:
+        if epoch % 1 == 0:
             print(f"Epoch {epoch:03d}  loss={loss:.4f}")
 
 
     return state, losses
+
+
+if __name__ == "__main__":
+
+    path = "gen/"
+
+    N = 5000
+    d = 4
+    n_epochs = 100
+
+    batch_size = 5000
+    z_batch_size = 20
+    Nz = z_batch_size * N // batch_size
+
+    key = random.PRNGKey(1)
+
+    key, key1, key2, key3, key4 = random.split(key, 5)
+    u = random.uniform(key2, (N, d))
+    x = random.normal(key1, (N, d))
+    z = random.normal(key3, (Nz, d))
+
+    model = generator(emb_dim=8, 
+                      hidden_dims= 3 * [8], 
+                      out_dim=d)
+
+    state, losses = train_generator(key4, 
+                                    model, 
+                                    u, x, z, 
+                                    1e-4, n_epochs, batch_size, z_batch_size)
+    
+
+    ckpt_dir = os.path.join(path, f"ckpt_gen")
+    ckpt_dir = os.path.abspath(ckpt_dir)
+    os.makedirs(ckpt_dir, exist_ok=True)
+    checkpoints.save_checkpoint(
+        ckpt_dir,
+        target=state.params,
+        step=0,
+        prefix="gen_",
+        overwrite=True
+    )
+    
+    plot_loss(losses, path)

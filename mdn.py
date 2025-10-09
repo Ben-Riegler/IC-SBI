@@ -101,6 +101,44 @@ def train_mdn(rng, model, x_data, θ_data,
 
     return state, losses
 
+def train_marginal_mdns(key, model, x_data, θ_data,
+              lr, n_epochs, batch_size, path):
+    
+    key, tkey = random.split(key)
+    par_list = []
+    losses_list = []
+    t0 = time.perf_counter()
+    for dim in range(d):
+
+        
+        
+        θ_dat = θ_data[:, dim][:, None]
+        state, losses = train_mdn(tkey, model,
+                                        x_data, θ_dat,
+                                        lr=lr, 
+                                        n_epochs=n_epochs, 
+                                        batch_size=batch_size)
+        
+        par_list.append(state.params)
+        losses_list.append(losses)
+        
+        ckpt_dir = os.path.join(path, f"ckpt_mdn_{dim}")
+        ckpt_dir = os.path.abspath(ckpt_dir)
+        os.makedirs(ckpt_dir, exist_ok=True)
+        checkpoints.save_checkpoint(
+            ckpt_dir,
+            target=state.params,
+            step=0,
+            prefix="mdn_",
+            overwrite=True
+        )
+        print("Saved MDN params to", ckpt_dir)
+        
+    t1 = time.perf_counter()
+    print(f"Training took {(t1-t0):.2f}s")
+
+    return losses_list, par_list
+
 # -- main -------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -131,39 +169,12 @@ if __name__ == "__main__":
 
     print(x_data.shape, θ_data.shape, post_mean.shape, post_var.shape)
 
-    key, tkey = random.split(key)
-    par_list = []
-    losses_list = []
-    t0 = time.perf_counter()
-    for dim in range(d):
+    key, trkey = random.split(key)
 
-        model = MDN(hidden_dims= 2 * [8], 
-                    K=K)
-        
-        θ_dat = θ_data[:, dim][:, None]
-        state, losses = train_mdn(tkey, model,
-                                        x_data, θ_dat,
-                                        lr=1e-4, 
-                                        n_epochs=epochs, 
-                                        batch_size=batch_size)
-        
-        par_list.append(state.params)
-        losses_list.append(losses)
-        
-        ckpt_dir = os.path.join(path, f"ckpt_mdn_{dim}")
-        ckpt_dir = os.path.abspath(ckpt_dir)
-        os.makedirs(ckpt_dir, exist_ok=True)
-        checkpoints.save_checkpoint(
-            ckpt_dir,
-            target=state.params,
-            step=0,
-            prefix="mdn_",
-            overwrite=True
-        )
-        print("Saved MDN params to", ckpt_dir)
-        
-    t1 = time.perf_counter()
-    print(f"Training took {(t1-t0):.2f}s")
+    model = MDN(hidden_dims= 2 * [8], 
+                K=K)
+
+    losses_list, par_list = train_marginal_mdns(trkey, model, x_data, θ_data, 1e-4, epochs, batch_size, "mdn/")
 
     plot_losses(losses_list, path)
 
