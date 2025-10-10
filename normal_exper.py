@@ -22,16 +22,16 @@ os.makedirs(path, exist_ok=True)
 
 d = 4
 K = 4
-N = 5000
-mdn_batch_size = 5000
-mdn_epochs = 5000
+N = 50#00
+mdn_batch_size = 50#00
+mdn_epochs = 50#00
 mdn_lr = 1e-4
 mdn_hidden_dims = 2 * [8]
 
 emb_dim = 8
 gen_hidden_dims = 3 * [8]
-gen_epochs = 5000
-gen_batch_size = 5000
+gen_epochs = 50#00
+gen_batch_size = 50#00
 z_batch_size = 20
 gen_lr = 1e-4
 Nz = z_batch_size * N // gen_batch_size
@@ -114,6 +114,9 @@ key, z_key = random.split(key)
 z_samples = random.normal(z_key, (N, d))
 y_samples = gen.apply(state.params, z=z_samples, x=x_data) # ~ p(y|x)
 
+print(x_data.shape)
+print(y_samples.shape)
+
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
 
@@ -128,4 +131,4 @@ plot_losses(losses_list, path+"y_mdn/")
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (4,))
 x_test = x_data[test_ids]
-plot_mdn_marginals(model=mdn, params=par_list, theta_range=(-5, 5), path= path + "y_mdn/")
+plot_mdn_marginals(model=mdn, params=par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")

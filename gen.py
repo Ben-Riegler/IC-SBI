@@ -23,22 +23,20 @@ class generator(nn.Module):
     @nn.compact
     def __call__(self, z: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray: 
 
-        # z: (z_batch, z_dim)
-        # x: (batch, x_dim)   
-         
-        z = z[None, :, : ] # (1, z_batch, z_dim)
-        x = x[:, None, :] # (batch, 1, x_dim)
+        # batch dims need to be same or broadcastable (see `train_generator`)
+        # z: (..., z_dim)
+        # x: (..., x_dim)   
 
-        h_z = nn.Dense(self.emb_dim)(z) # (1, z_batch, emb_dim)
-        h_x = nn.Dense(self.emb_dim)(x) # (batch, 1, emb_dim)
+        h_z = nn.Dense(self.emb_dim)(z) # (..., emb_dim)
+        h_x = nn.Dense(self.emb_dim)(x) # (..., emb_dim)
 
-        h = h_z + h_x # (batch, z_batch, emb_dim)
+        h = h_z + h_x # (..., emb_dim)
 
         for dim in self.hidden_dims:
             h = nn.Dense(dim)(h)
             h = nn.swish(h)
         
-        y = nn.Dense(self.out_dim)(h) # (batch, z_batch, out_dim)
+        y = nn.Dense(self.out_dim)(h) # (..., out_dim)
 
         return y
  
@@ -54,11 +52,16 @@ def train_step(state: train_state.TrainState,
     i_idx, j_idx = jnp.triu_indices(K, k=1) # upper triangular indices 
 
     def loss_fn(params):
-        y = state.apply_fn(params, z, x) # (batch, z_batch, y_dim)
+
+        # expand, we want all samples z to interact with each sample in x
+        z_ = z[None, :, : ] # (1, z_batch, z_dim)
+        x_ = x[:, None, :] # (batch, 1, x_dim)
+        y = state.apply_fn(params, z_, x_) # (batch, z_batch, y_dim)
+        
         v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
 
-        u_b1d = u[:, None, :] # (batch, 1, y_dim)
-        uv = jnp.linalg.vector_norm(u_b1d-v, axis=-1) # (batch, z_batch)
+        u_ = u[:, None, :] # (batch, 1, y_dim)
+        uv = jnp.linalg.vector_norm(u_-v, axis=-1) # (batch, z_batch)
 
         dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (K^2-K)/2, y_dim)
         vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (K^2-K)/2)
@@ -112,8 +115,8 @@ def train_generator(key,
     losses = []
 
     state = create_train_state(key, model, learning_rate, 
-                               (z_batch_size, z_dim),
-                               (batch_size, x_dim)
+                               (1, z_batch_size, z_dim),
+                               (batch_size, 1, x_dim)
                                )
     n_batches = Nx // batch_size
 
