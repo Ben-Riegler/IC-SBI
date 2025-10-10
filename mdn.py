@@ -13,6 +13,7 @@ jax.config.update("jax_enable_x64", True)
 
 from data import gen_mv_normal_normal_data, mvn_posterior
 from plots import plot_mvn_marginals, plot_losses
+from utils import save_MDN
 
 # -- model definition --------------------------------------------------------
 
@@ -23,7 +24,7 @@ class MDN(nn.Module):
     @nn.compact
     def __call__(self, x: jnp.ndarray
                 ) -> Tuple[jnp.ndarray,jnp.ndarray,jnp.ndarray]:
-        h = x
+        h = x # (batch, x_dim)
         for dim in self.hidden_dims[:-1]:
             h = nn.Dense(dim)(h)
             h = nn.swish(h)
@@ -104,13 +105,13 @@ def train_mdn(rng, model, x_data, θ_data,
 def train_marginal_mdns(key, model, x_data, θ_data,
               lr, n_epochs, batch_size, path):
     
+    d = θ_data.shape[-1]
+    
     key, tkey = random.split(key)
     par_list = []
     losses_list = []
     t0 = time.perf_counter()
     for dim in range(d):
-
-        
         
         θ_dat = θ_data[:, dim][:, None]
         state, losses = train_mdn(tkey, model,
@@ -121,19 +122,9 @@ def train_marginal_mdns(key, model, x_data, θ_data,
         
         par_list.append(state.params)
         losses_list.append(losses)
-        
-        ckpt_dir = os.path.join(path, f"ckpt_mdn_{dim}")
-        ckpt_dir = os.path.abspath(ckpt_dir)
-        os.makedirs(ckpt_dir, exist_ok=True)
-        checkpoints.save_checkpoint(
-            ckpt_dir,
-            target=state.params,
-            step=0,
-            prefix="mdn_",
-            overwrite=True
-        )
-        print("Saved MDN params to", ckpt_dir)
-        
+
+        save_MDN(path, dim, state.params)
+            
     t1 = time.perf_counter()
     print(f"Training took {(t1-t0):.2f}s")
 
@@ -160,10 +151,10 @@ if __name__ == "__main__":
     prior_mean = jnp.zeros((d,1))
 
     x_data, θ_data = gen_mv_normal_normal_data(key, 
-                                                        n_samples=N, 
-                                                        prior_mean=prior_mean,
-                                                        prior_L=L0, 
-                                                        model_L=L1)
+                                                n_samples=N, 
+                                                prior_mean=prior_mean,
+                                                prior_L=L0, 
+                                                model_L=L1)
     
     post_mean, post_var = mvn_posterior(x_data, prior_mean, L0, L1)
 
@@ -182,9 +173,8 @@ if __name__ == "__main__":
     key, tk = random.split(key)
     test_ids = random.choice(tk, N, (4,))
     x_test = x_data[test_ids]
-    fig, axes = plot_mvn_marginals(model, par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5))
-    plt.savefig(path + "fit.pdf")
-    plt.close()
+    plot_mvn_marginals(model, par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path)
+
 
 
 

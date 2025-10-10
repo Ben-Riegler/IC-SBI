@@ -5,12 +5,12 @@ from jax import random
 from flax import linen as nn
 from flax.training import train_state, checkpoints
 import optax
-import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
 import time
 
 from ecdf import sig_marg_ecdf_vals
 from plots import plot_loss
+from utils import save_gen
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_debug_nans", True)
@@ -53,8 +53,6 @@ def train_step(state: train_state.TrainState,
     K = z.shape[0]
     i_idx, j_idx = jnp.triu_indices(K, k=1) # upper triangular indices 
 
-
-
     def loss_fn(params):
         y = state.apply_fn(params, z, x) # (batch, z_batch, y_dim)
         v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
@@ -70,7 +68,7 @@ def train_step(state: train_state.TrainState,
 
         diff = 2 * uv_m - vv_m # (batch)
 
-        ed = jnp.mean(diff) # (1)
+        ed = jnp.mean(diff) # ()
 
         return ed
 
@@ -119,6 +117,8 @@ def train_generator(key,
                                )
     n_batches = Nx // batch_size
 
+
+    t0 = time.perf_counter()
     for epoch in range(n_epochs):
         key, pkey1, pkey2 = random.split(key, 3)
         x_idc = random.permutation(pkey1, Nx)
@@ -139,8 +139,12 @@ def train_generator(key,
 
             losses.append(loss)
 
-        if epoch % 1 == 0:
+        if epoch % 10 == 0:
             print(f"Epoch {epoch:03d}  loss={loss:.4f}")
+        
+    t1 = time.perf_counter()
+
+    print(f"Training took {(t1-t0):.2f}s")
 
 
     return state, losses
@@ -152,7 +156,7 @@ if __name__ == "__main__":
 
     N = 5000
     d = 4
-    n_epochs = 100
+    n_epochs = 10
 
     batch_size = 5000
     z_batch_size = 20
@@ -173,17 +177,6 @@ if __name__ == "__main__":
                                     model, 
                                     u, x, z, 
                                     1e-4, n_epochs, batch_size, z_batch_size)
-    
-
-    ckpt_dir = os.path.join(path, f"ckpt_gen")
-    ckpt_dir = os.path.abspath(ckpt_dir)
-    os.makedirs(ckpt_dir, exist_ok=True)
-    checkpoints.save_checkpoint(
-        ckpt_dir,
-        target=state.params,
-        step=0,
-        prefix="gen_",
-        overwrite=True
-    )
+    save_gen(path, state.params)
     
     plot_loss(losses, path)

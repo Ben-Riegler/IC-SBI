@@ -6,6 +6,8 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from itertools import product
+import os
+from typing import List
 
 from data import mvn_posterior
 
@@ -229,13 +231,14 @@ def plot_multi_mvn_marginals(model,
     return fig, axes
 
 def plot_mvn_marginals(model,
-                      params,
+                      params: List,
                       x_vals: jnp.ndarray,
                       prior_mean: jnp.ndarray,
                       prior_L: jnp.ndarray,
                       model_L: jnp.ndarray,
                       theta_range=(-10.0, 10.0),
-                      num_points=300):
+                      num_points=300,
+                      path=None):
     """
     Plot learned vs true marginal CDFs for each dimension and a set of x's.
 
@@ -309,7 +312,8 @@ def plot_mvn_marginals(model,
                 ax.legend(loc="lower right", fontsize=8)
 
     fig.tight_layout()
-    return fig, axes
+    plt.savefig(path + "fit.pdf")
+    plt.close()
 
 def plot_losses(losses_list, path):
 
@@ -338,6 +342,7 @@ def plot_losses(losses_list, path):
     
     
     plt.tight_layout()
+    os.makedirs(path, exist_ok=True)
     plt.savefig(path + "loss.pdf")
     plt.close()
 
