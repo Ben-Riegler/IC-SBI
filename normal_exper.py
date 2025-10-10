@@ -12,7 +12,7 @@ from jax.scipy.stats import norm
 from mdn import MDN, train_marginal_mdns
 from gen import generator, train_generator
 from data import gen_mv_normal_normal_data, mvn_posterior
-from plots import plot_loss, plot_losses, plot_mvn_marginals
+from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals
 from utils import save_gen
 
 
@@ -72,7 +72,6 @@ plot_mvn_marginals(mdn, par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5
 
 def get_cdf_vals(model, par_list, x_data, θ_data):
 
-
     u = []
     # Loop over dimensions
     for dim in range(d):
@@ -105,3 +104,28 @@ state, losses = train_generator(k5,
 save_gen(path, state.params)
 
 plot_loss(losses, path+"gen/")
+
+# fit MDNs to marginals F(y_j|x) for learned P(Y|x)
+# sample p(y,x) = p(x)p(y|x)
+# x_data ~ p(x)
+
+key, z_key = random.split(key)
+
+z_samples = random.normal(z_key, (N, d))
+y_samples = gen.apply(state.params, z=z_samples, x=x_data) # ~ p(y|x)
+
+mdn = MDN(hidden_dims = mdn_hidden_dims,
+          K = K)
+
+key, y_key = random.split(key)
+losses_list, par_list = train_marginal_mdns(y_key, 
+                                            model=mdn, x_data=x_data, θ_data=y_samples, 
+                                            lr=mdn_lr, n_epochs=mdn_epochs, batch_size=mdn_batch_size, 
+                                            path=path+"y_mdn/")
+
+plot_losses(losses_list, path+"y_mdn/")
+
+key, t_key = random.split(key)
+test_ids = random.choice(t_key, N, (4,))
+x_test = x_data[test_ids]
+plot_mdn_marginals(model=mdn, params=par_list, theta_range=(-5, 5), path= path + "y_mdn/")
