@@ -13,6 +13,7 @@ import time
 from data import gen_mv_normal_normal_data
 from plots import mvn_posterior, plot_multi_mvn_marginals, plot_mvn_data, plot_loss
 from mdn import MDN
+from utils import save_multiMDN
 
 jax.config.update("jax_enable_x64", True)
 
@@ -116,7 +117,7 @@ if __name__ == "__main__":
     K = 4
     N = 5000
     batch_size = 5000
-    epochs = 5000
+    epochs = 50
 
     key = random.PRNGKey(1)
     key, k1, k2, k3 = random.split(key, 4)
@@ -154,19 +155,7 @@ if __name__ == "__main__":
 
     print(f"Training took {(t1-t0):.2f}")
 
-    # 3) save parameters
-    ckpt_dir = os.path.join(path, "ckpt_multi_mdn")
-    ckpt_dir = os.path.abspath(ckpt_dir)
-    os.makedirs(ckpt_dir, exist_ok=True)
-    checkpoints.save_checkpoint(
-        ckpt_dir,
-        target=state.params,
-        step=0,
-        prefix="multi_mdn_",
-        overwrite=True
-    )
-
-    print("Saved MultiMDN params to", ckpt_dir)
+    save_multiMDN(path=path, params=state.params)
 
 
     plot_loss(losses, path)
