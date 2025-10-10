@@ -315,7 +315,6 @@ def plot_mvn_marginals(model,
     plt.savefig(path + "fit.pdf")
     plt.close()
 
-
 def plot_mdn_marginals(model,
                       params: List,
                       x_vals: jnp.ndarray,
@@ -386,7 +385,6 @@ def plot_mdn_marginals(model,
     plt.savefig(path + "learned.pdf")
     plt.close()
 
-
 def plot_losses(losses_list, path):
 
     n_plots = len(losses_list)
@@ -395,31 +393,29 @@ def plot_losses(losses_list, path):
     n_cols = math.ceil(math.sqrt(n_plots))
     n_rows = math.ceil(n_plots / n_cols)
 
-    fig, axes = plt.subplots(n_rows, n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, squeeze=False)
 
     for idx, (row, col) in enumerate(product(range(n_rows), range(n_cols))):
 
-            losses = losses_list[idx]
-            ax = axes[row, col]
-            n = len(losses)
-            ns = [i for i in range(n)]
+            if idx < n_plots:
+                losses = losses_list[idx]
+                ax = axes[row, col]
+                n = len(losses)
+                ns = [i for i in range(n)]
 
-            ax.plot(ns, losses, color="red", linewidth=0.5)
-            ax.set_title(f"θ dim {idx}")
+                ax.plot(ns, losses, color="red", linewidth=0.5)
+                ax.set_title(f"θ dim {idx}")
 
-            if row == n_rows-1:
-                ax.set_xlabel("Training Step")
-            if col == 0:    
-                ax.set_ylabel("Training Loss")
+                if row == n_rows-1:
+                    ax.set_xlabel("Training Step")
+                if col == 0:    
+                    ax.set_ylabel("Training Loss")
     
     
     plt.tight_layout()
     os.makedirs(path, exist_ok=True)
     plt.savefig(path + "loss.pdf")
     plt.close()
-
-
-
 
 def plot_loss(losses, path):
 

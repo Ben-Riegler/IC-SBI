@@ -3,11 +3,11 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
-from flax.training import train_state, checkpoints
+from flax.training import train_state
 import optax
-import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
 import time
+from jax.scipy.stats import norm
 
 jax.config.update("jax_enable_x64", True)
 
@@ -84,8 +84,9 @@ def create_train_state(rng: Any, model: MDN,
 def train_mdn(rng, model, x_data, θ_data,
               lr, n_epochs, batch_size):
     
-    state = create_train_state(rng, model, lr, x_shape=x_data.shape)
-    n = x_data.shape[0]
+
+    n, x_dim = x_data.shape
+    state = create_train_state(rng, model, lr, x_shape=(batch_size, x_dim))
 
     losses = []
 
@@ -107,11 +108,11 @@ def train_marginal_mdns(key, model, x_data, θ_data,
     
     d = θ_data.shape[-1]
     
-    key, tkey = random.split(key)
     par_list = []
     losses_list = []
     t0 = time.perf_counter()
     for dim in range(d):
+        key, tkey = random.split(key)
         
         θ_dat = θ_data[:, dim][:, None]
         state, losses = train_mdn(tkey, model,
@@ -129,6 +130,33 @@ def train_marginal_mdns(key, model, x_data, θ_data,
     print(f"Training took {(t1-t0):.2f}s")
 
     return losses_list, par_list
+
+
+def get_cdf_vals(model, par_list, 
+                 x_data, # (..., x_dim)
+                 θ_data, # (..., θ_dim)
+                 ):
+
+    """Get marginal CDF values F(θ_j|x) from trained MDN"""
+    d = θ_data.shape[-1]
+    u = []
+    # Loop over dimensions
+    for dim in range(d):
+
+        logits, means, log_scales = model.apply(par_list[dim], x_data)  # each: (..., K)
+        scales = jnp.exp(log_scales) 
+        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)  # (..., K)
+        pi = jnp.exp(log_pi)                                           # (..., K)
+
+        # Learned mixture CDF
+        comp_cdfs = norm.cdf((θ_data[..., dim][..., None] - means) / scales)  # (..., K)
+        u_ = jnp.sum(pi * comp_cdfs, axis=-1) # (...)
+        u.append(u_)
+
+    u = jnp.stack(u, axis=-1) # (..., θ_dim)
+
+    return u
+
 
 # -- main -------------------------------------------------------------------
 

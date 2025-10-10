@@ -23,7 +23,7 @@ class generator(nn.Module):
     @nn.compact
     def __call__(self, z: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray: 
 
-        # batch dims need to be same or broadcastable (see `train_generator`)
+        # batch dims need to be same or broadcastable to same shape (see `train_generator`)
         # z: (..., z_dim)
         # x: (..., x_dim)   
 
