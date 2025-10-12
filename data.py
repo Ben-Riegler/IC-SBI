@@ -19,6 +19,15 @@ def gen_mv_normal_normal_data(key,
 
     return x.squeeze(-1), θ.squeeze(-1)
 
+def sample_x_marginal(key, n_samples, prior_mean, prior_L, model_L):
+    d = prior_L.shape[0]
+    Sigma_x = prior_L @ prior_L.T + model_L @ model_L.T
+    Lx = jnp.linalg.cholesky(Sigma_x) # (d, d)
+    eps = random.normal(key, (n_samples, d, 1))
+    x = prior_mean + jnp.matmul(Lx, eps)
+    return x.squeeze(-1)  # (n_samples, d)
+
+
 def mvn_posterior(x, prior_mean, prior_L, model_L):
     """
     Compute posterior parameters given data x

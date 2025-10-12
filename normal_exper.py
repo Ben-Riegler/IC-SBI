@@ -1,37 +1,33 @@
 import os
-import jax
 import jax.numpy as jnp
 from jax import random
-from flax import linen as nn
-from flax.training import train_state, checkpoints
-import optax
-from typing import List, Any, Tuple
-import matplotlib.pyplot as plt
-from jax.scipy.stats import norm
+from jax import device_get
+import numpy as np
 
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
 from data import gen_mv_normal_normal_data, mvn_posterior
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals
+from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs
 from utils import save_gen
+from mdn_inv import mdn_inv_marg
 
 
 # set up and data
-path = "normal/"
+path = "normal_exp/"
 os.makedirs(path, exist_ok=True)
 
-d = 1
-K = 4
-N = 50000
-mdn_batch_size = 10000
-mdn_epochs = 5000
+d = 3
+K = 5
+N = 1000
+mdn_batch_size = 1000
+mdn_epochs = 500
 mdn_lr = 1e-4
 mdn_hidden_dims = 2 * [8]
 
 emb_dim = 8
-gen_hidden_dims = 3 * [8]
-gen_epochs = 1
-gen_batch_size = 5000
+gen_hidden_dims = 5 * [8]
+gen_epochs = 50
+gen_batch_size = 1000
 z_batch_size = 20
 gen_lr = 1e-4
 Nz = z_batch_size * N // gen_batch_size
@@ -44,6 +40,23 @@ L0 = random.normal(k1, (d,d))
 L1 = random.normal(k2, (d,d))
 
 prior_mean = jnp.zeros((d,1))
+
+# save for later
+np.savez_compressed(
+    os.path.join(path, "DGP.npz"),
+    L0=device_get(L0),               # (d, d)
+    L1=device_get(L1),               # (d, d)
+    prior_mean=device_get(prior_mean)  # (d, 1)
+)
+
+np.savez_compressed(
+    os.path.join(path, "Pars.npz"),
+    mdn_hidden_dims=device_get(mdn_hidden_dims),             
+    gen_hidden_dims=device_get(gen_hidden_dims),
+    emb_dim=device_get(emb_dim),
+    K=device_get(K)
+)
+
 
 z = random.normal(k4, (Nz, d))
 
@@ -60,7 +73,7 @@ print(x_data.shape, θ_data.shape, post_mean.shape, post_var.shape)
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
 
-losses_list, par_list = train_marginal_mdns(k2, 
+losses_list, post_par_list = train_marginal_mdns(k2, 
                                             model=mdn, x_data=x_data, θ_data=θ_data, 
                                             lr=mdn_lr, n_epochs=mdn_epochs, batch_size=mdn_batch_size, 
                                             path=path+"post_mdn/")
@@ -68,22 +81,22 @@ plot_losses(losses_list, path+"post_mdn/")
 
 test_ids = random.choice(k3, N, (4,))
 x_test = x_data[test_ids]
-plot_mvn_marginals(mdn, par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
+plot_mvn_marginals(mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
 
 
-u = get_cdf_vals(model=mdn, par_list=par_list, 
+u = get_cdf_vals(model=mdn, par_list=post_par_list, 
                  x_data=x_data,θ_data=θ_data)
 
 
 gen = generator(emb_dim=emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
 
-state, losses = train_generator(k5,
+gen_state, losses = train_generator(k5,
                                 model=gen,
                                 u=u, x=x_data, z=z, 
                                 learning_rate=gen_lr, 
                                 n_epochs=gen_epochs, batch_size=gen_batch_size, z_batch_size=z_batch_size)
 
-save_gen(path, state.params)
+save_gen(path, gen_state.params)
 
 plot_loss(losses, path+"gen/")
 
@@ -94,14 +107,14 @@ plot_loss(losses, path+"gen/")
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (N, d))
-y_samples = gen.apply(state.params, z=z_samples, x=x_data) # ~ p(y|x) (N, d)
+y_samples = gen.apply(gen_state.params, z=z_samples, x=x_data) # ~ p(y|x) (N, d)
 print(y_samples.shape)
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
 
 key, y_key = random.split(key)
-losses_list, par_list = train_marginal_mdns(y_key, 
+losses_list, y_par_list = train_marginal_mdns(y_key, 
                                             model=mdn, x_data=x_data, θ_data=y_samples, 
                                             lr=mdn_lr, n_epochs=mdn_epochs, batch_size=mdn_batch_size, 
                                             path=path+"y_mdn/")
@@ -110,19 +123,35 @@ plot_losses(losses_list, path+"y_mdn/")
 
 # test: posterior sampling
 test_locs = 4
-N_test = 50000
+N_test = 1000
 
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
 x_test = x_data[test_ids] # (test_locs, d)
-plot_mdn_marginals(model=mdn, params=par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")
+plot_mdn_marginals(model=mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")
 
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (test_locs, N_test, d))
-y_samples = gen.apply(state.params, z=z_samples, x=x_test[:, None, :]) # (test_locs, N_test, d) each test_loc gets its own N_test samples
+y_samples = gen.apply(gen_state.params, z=z_samples, x=x_test[:, None, :]) # (test_locs, N_test, d) each test_loc gets its own N_test samples
 
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
-v = get_cdf_vals(model=mdn, par_list=par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
+v = get_cdf_vals(model=mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
 
+# map into parameter space
+theta = mdn_inv_marg(model = mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
+
+# Ground truth posterior at x_test
+# If you already computed full post_mean/post_var for x_data, just index them:
+mu_gt  = post_mean[test_ids]        
+cov_gt = jnp.repeat(post_var[None, ...], axis=0, repeats=test_locs)                   # (test_locs, d, d)
+
+plot_post_pairs(
+    theta=theta,
+    x_vals=x_test,
+    post_mean=mu_gt,
+    post_cov=cov_gt,
+    save_dir=os.path.join(path, "pairplots"),
+    file_prefix="posterior_pairs",
+)

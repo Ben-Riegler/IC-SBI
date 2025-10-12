@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 from itertools import product
 import os
 from typing import List
@@ -382,8 +383,11 @@ def plot_mdn_marginals(model,
                 ax.legend(loc="lower right", fontsize=8)
 
     fig.tight_layout()
-    plt.savefig(path + "learned.pdf")
-    plt.close()
+    if path is not None:
+        plt.savefig(path + "learned.pdf")
+        plt.close()
+    else:
+        plt.show()
 
 def plot_losses(losses_list, path):
 
@@ -433,3 +437,128 @@ def plot_loss(losses, path):
     plt.savefig(path + "loss.pdf")
     plt.close()
     
+
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_post_pairs(
+    theta,
+    post_mean,
+    post_cov,
+    save_dir=None,
+    x_vals=None,
+    file_prefix="pairplot",
+    max_scatter=8000,
+    grid_size=200,
+    chi2_probs=(0.50, 0.75, 0.90, 
+                # 0.95, 0.99
+                ),
+    k_sigma=3.0,
+    dpi=150,
+    seed=0,
+):
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)
+    rng = np.random.default_rng(seed)
+
+    theta = np.asarray(theta)
+    post_mean = np.asarray(post_mean)
+    if post_mean.ndim == 3 and post_mean.shape[-1] == 1:
+        post_mean = post_mean[..., 0]
+    post_cov = np.asarray(post_cov)
+
+    n_x, n_samps, d = theta.shape
+    assert post_mean.shape == (n_x, d)
+    assert post_cov.shape == (n_x, d, d)
+    if d < 2:
+        raise ValueError("d must be >= 2 to form pairwise plots.")
+
+    # Chi-square(df=2) quantiles (increasing)
+    chi2_q = {
+        0.50: 1.38629436112,
+        0.75: 2.77258872224,
+        0.90: 4.60517018599,
+        0.95: 5.99146454711,
+        0.99: 9.21034037198,
+    }
+    chi2_vals = [chi2_q[p] for p in chi2_probs]
+
+    for i in range(n_x):
+        # (d-1) x (d-1) grid
+        fig, axes = plt.subplots(d-1, d-1, figsize=(3.0 * (d-1), 3.0 * (d-1)), constrained_layout=True)
+        if d-1 == 1:
+            axes = np.array([[axes]])
+
+        mu_full = post_mean[i]
+        Sigma_full = post_cov[i]
+
+        sel = rng.choice(n_samps, size=min(n_samps, max_scatter), replace=False)
+
+        for r in range(d-1):        # rows map to y-index b = r+1
+            for c in range(d-1):    # cols map to x-index a = c
+                ax = axes[r, c]
+                if r < c:
+                    ax.axis("off") 
+                    continue
+
+                a, b = c, r + 1     # pair (θ_a on x-axis, θ_b on y-axis)
+
+                xs = theta[i, sel, a]
+                ys = theta[i, sel, b]
+                ax.scatter(xs, ys, s=4, alpha=0.35, linewidths=0)
+
+                mu = mu_full[[a, b]]
+                Sigma = Sigma_full[np.ix_([a, b], [a, b])]
+                det = np.linalg.det(Sigma)
+                if not np.isfinite(det) or det <= 0:
+                    jitter = 1e-6 * (np.trace(Sigma) / 2.0 if np.isfinite(np.trace(Sigma)) else 1.0)
+                    Sigma = Sigma + jitter * np.eye(2)
+
+                inv = np.linalg.inv(Sigma)
+                std = np.sqrt(np.diag(Sigma))
+
+                x_min = np.minimum(xs.min(), mu[0] - k_sigma * std[0])
+                x_max = np.maximum(xs.max(), mu[0] + k_sigma * std[0])
+                y_min = np.minimum(ys.min(), mu[1] - k_sigma * std[1])
+                y_max = np.maximum(ys.max(), mu[1] + k_sigma * std[1])
+
+                if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
+                    pad = 1e-3 if np.isfinite(mu[0]) else 1.0
+                    x_min, x_max = mu[0] - pad, mu[0] + pad
+                if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min == y_max:
+                    pad = 1e-3 if np.isfinite(mu[1]) else 1.0
+                    y_min, y_max = mu[1] - pad, mu[1] + pad
+
+                xx = np.linspace(x_min, x_max, grid_size)
+                yy = np.linspace(y_min, y_max, grid_size)
+                XX, YY = np.meshgrid(xx, yy)
+                DX = XX - mu[0]
+                DY = YY - mu[1]
+
+                # Mahalanobis^2 field, contour at chi-square levels
+                R = DX * (inv[0, 0] * DX + inv[0, 1] * DY) + DY * (inv[1, 0] * DX + inv[1, 1] * DY)
+                ax.contour(XX, YY, R, levels=chi2_vals, linewidths=1.0)
+
+                if c == 0:
+                    ax.set_ylabel(rf"$\theta_{{{b+1}}}$")
+                if r == d - 2:
+                    ax.set_xlabel(rf"$\theta_{{{a+1}}}$")
+
+        title = f"Pairwise posterior checks at "
+        if x_vals is not None:
+            x_str = np.array2string(np.asarray(x_vals[i]), precision=2, separator=", ")
+            title += f"x={x_str}"
+        fig.suptitle(title, fontsize=10)
+
+        if save_dir is not None:
+            out_path = os.path.join(save_dir, f"{file_prefix}_{i}.png")
+            fig.savefig(out_path, dpi=dpi)
+            plt.close(fig)
+        else:
+            fig.show()
+
+
+
+
+

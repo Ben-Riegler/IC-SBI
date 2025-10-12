@@ -3,44 +3,56 @@ import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
 
-
-# =========================
-#   MDN: SAVE / LOAD
-# =========================
-
-def save_MDN(path: str, dim: int, params):
+def save_MDN(ckpt_dir: str, dim,  params) -> None:
     """
-    Save MDN params using Orbax, keeping structure {'params': ...} for compatibility.
-    Creates .../ckpt_mdn_{dim}/mdn_0 as the checkpoint folder.
+    Save a Flax params pytree to `ckpt_dir` using Orbax.
     """
-    base = os.path.abspath(os.path.join(path, f"ckpt_mdn_{dim}"))
-    ckpt_dir = os.path.join(base, "mdn_0")   # one checkpoint named "mdn_0"
+    ckpt_dir = os.path.abspath(ckpt_dir + f"ckpt_{dim}/")
     os.makedirs(ckpt_dir, exist_ok=True)
-
     checkpointer = ocp.PyTreeCheckpointer()
-    target = {'params': params}
-    save_args = orbax_utils.save_args_from_target(target)
-    checkpointer.save(ckpt_dir, target, save_args=save_args, force=True)
-    print("Saved MDN params to", ckpt_dir)
+
+    # Save the params pytree (no wrapper)
+    save_args = orbax_utils.save_args_from_target(params)
+    checkpointer.save(ckpt_dir, params, save_args=save_args, force=True)
 
 
 def load_MDN(ckpt_dir: str, model_def, rng_key, hidden_dims, K, x_dim):
     """
-    Load a trained MDN (Orbax). `ckpt_dir` should point to the checkpoint folder,
-    e.g. .../ckpt_mdn_{dim}/mdn_0
-    Returns (model, {'params': ...}) for compatibility with your code.
+    Build and init the model, then restore params from `ckpt_dir`.
+    Returns (model, restored_params).
     """
-    # Init a dummy model to get the expected param structure/dtypes
+
     model = model_def(hidden_dims=hidden_dims, K=K)
+
+    # Initialize to get a like-shaped params pytree
     dummy_x = jnp.zeros((1, x_dim))
-    init_vars = model.init(rng_key, dummy_x)
+    init_vars = model.init(rng_key, dummy_x)          # {'params': ...}
 
-    target = {'params': init_vars['params']}
-    restore_args = orbax_utils.restore_args_from_target(target)
-
+    # Restore directly into the like-shaped pytree (no restore_args needed)
     checkpointer = ocp.PyTreeCheckpointer()
-    restored = checkpointer.restore(ckpt_dir, item=target, restore_args=restore_args)
-    return model, restored
+    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
+
+    return model, restored_params
+
+def load_gen(ckpt_dir: str, model_def, rng_key, emb_dim, hidden_dims, z_dim, x_dim, out_dim):
+    """
+    Build and init the model, then restore params from `ckpt_dir`.
+    Returns (model, restored_params).
+    """
+
+    model = model_def(emb_dim=emb_dim, hidden_dims=hidden_dims, out_dim=out_dim)
+
+    # Initialize to get a like-shaped params pytree
+    dummy_z = jnp.zeros((1, z_dim))
+    dummy_x = jnp.zeros((1, x_dim))
+    init_vars = model.init(rng_key, dummy_z, dummy_x)          # {'params': ...}
+
+    # Restore directly into the like-shaped pytree (no restore_args needed)
+    checkpointer = ocp.PyTreeCheckpointer()
+    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
+
+    return model, restored_params
+
 
 
 def save_multiMDN(path: str, params):
@@ -70,12 +82,13 @@ def save_gen(path: str, params):
     """
     base = os.path.abspath(os.path.join(path, "gen", "ckpt_gen"))
     ckpt_dir = os.path.join(base, "gen_0")
-    os.makedirs(ckpt_dir, exist_ok=True)
 
+    os.makedirs(ckpt_dir, exist_ok=True)
     checkpointer = ocp.PyTreeCheckpointer()
-    target = {'params': params}
-    save_args = orbax_utils.save_args_from_target(target)
-    checkpointer.save(ckpt_dir, target, save_args=save_args, force=True)
+
+    # Save the params pytree (no wrapper)
+    save_args = orbax_utils.save_args_from_target(params)
+    checkpointer.save(ckpt_dir, params, save_args=save_args, force=True)
     print("Saved generator params to", ckpt_dir)
 
 
