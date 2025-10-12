@@ -11,30 +11,58 @@ from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
 
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--folder', type=str, default="results")
+parser.add_argument("--seed", type=int, default=1)
+parser.add_argument('--d', type=int, default=2)
+
+parser.add_argument('--K', type=int, default=2)
+parser.add_argument('--N', type=int, default=100)
+parser.add_argument('--mdn_batch_size', type=int, default=1)
+parser.add_argument('--mdn_epochs', type=int, default=1)
+parser.add_argument('--mdn_lr', type=float, default=1e-4)
+parser.add_argument('--mdn_hidden_dims', type=list, default=2 * [8])
+
+parser.add_argument("--emb_dim", type=int, default=8)
+parser.add_argument('--gen_hidden_dims', type=list, default=5 * [8])
+parser.add_argument("--gen_epochs", type=int, default=1)
+parser.add_argument("--gen_batch_size", type=int, default=1)
+parser.add_argument("--z_batch_size", type=int, default=1)
+parser.add_argument('--gen_lr', type=float, default=1e-4)
+
+parser.add_argument("--N_fit", type=int, default=100)
+parser.add_argument("--N_test", type=int, default=100)
+
+args = parser.parse_args()
+
 
 # set up and data
-path = "normal_exp/"
+path = args.folder
 os.makedirs(path, exist_ok=True)
 
-d = 3
-K = 5
-N = 10000
-mdn_batch_size = 5000
-mdn_epochs = 5000
-mdn_lr = 1e-4
-mdn_hidden_dims = 2 * [8]
+d = args.d
+K = args.K
+N = args.N
+mdn_batch_size = args.mdn_batch_size
+mdn_epochs = args.mdn_epochs
+mdn_lr = args.mdn_lr
+mdn_hidden_dims = args.mdn_hidden_dims
 
-emb_dim = 8
-gen_hidden_dims = 5 * [8]
-gen_epochs = 1200
-gen_batch_size = 5000
-z_batch_size = 30
-gen_lr = 1e-4
+emb_dim = args.emb_dim
+
+gen_hidden_dims = args.gen_hidden_dims
+gen_epochs = args.gen_epochs
+gen_batch_size = args.gen_batch_size
+z_batch_size = args.z_batch_size
+gen_lr = args.gen_lr
 Nz = z_batch_size * N // gen_batch_size
 
 
 
-key = random.PRNGKey(1)
+key = random.PRNGKey(args.seed)
 key, k1, k2, k3, k4, k5 = random.split(key, 6)
 L0 = random.normal(k1, (d,d))
 L1 = random.normal(k2, (d,d))
@@ -102,15 +130,12 @@ plot_loss(losses, path+"gen/")
 # sample p(y,x) = p(x)p(y|x)
 # x_data ~ p(x)
 
-N_fit = 50000
+N_fit = args.N_fit
 key, z_key, x_key = random.split(key, 3)
 
 z_samples = random.normal(z_key, (N_fit, d))
 x_samples = sample_x_marginal(x_key, N_fit, prior_mean, L0, L1)
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N, d)
-
-
-
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
@@ -125,7 +150,7 @@ plot_losses(losses_list, path+"y_mdn/")
 
 # test: posterior sampling
 test_locs = 4
-N_test = 1000
+N_test = args.N_test
 
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
@@ -137,9 +162,12 @@ key, z_key = random.split(key)
 z_samples = random.normal(z_key, (test_locs, N_test, d))
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_test[:, None, :]) # (test_locs, N_test, d) each test_loc gets its own N_test samples
 
+
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 v = get_cdf_vals(model=mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
+
+
 
 # map into parameter space
 theta = mdn_inv_marg(model = mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
