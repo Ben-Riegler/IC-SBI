@@ -1,3 +1,8 @@
+gen/
+mdn/
+multi_mdn/
+normal_exp/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
