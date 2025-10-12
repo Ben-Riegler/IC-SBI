@@ -14,6 +14,7 @@ def save_MDN(ckpt_dir: str, dim,  params) -> None:
     # Save the params pytree (no wrapper)
     save_args = orbax_utils.save_args_from_target(params)
     checkpointer.save(ckpt_dir, params, save_args=save_args, force=True)
+    print(f"Saved MDN for dimension {dim} to {ckpt_dir}")
 
 
 def load_MDN(ckpt_dir: str, model_def, rng_key, hidden_dims, K, x_dim):
@@ -33,26 +34,6 @@ def load_MDN(ckpt_dir: str, model_def, rng_key, hidden_dims, K, x_dim):
     restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
 
     return model, restored_params
-
-def load_gen(ckpt_dir: str, model_def, rng_key, emb_dim, hidden_dims, z_dim, x_dim, out_dim):
-    """
-    Build and init the model, then restore params from `ckpt_dir`.
-    Returns (model, restored_params).
-    """
-
-    model = model_def(emb_dim=emb_dim, hidden_dims=hidden_dims, out_dim=out_dim)
-
-    # Initialize to get a like-shaped params pytree
-    dummy_z = jnp.zeros((1, z_dim))
-    dummy_x = jnp.zeros((1, x_dim))
-    init_vars = model.init(rng_key, dummy_z, dummy_x)          # {'params': ...}
-
-    # Restore directly into the like-shaped pytree (no restore_args needed)
-    checkpointer = ocp.PyTreeCheckpointer()
-    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
-
-    return model, restored_params
-
 
 
 def save_multiMDN(path: str, params):
@@ -90,6 +71,26 @@ def save_gen(path: str, params):
     save_args = orbax_utils.save_args_from_target(params)
     checkpointer.save(ckpt_dir, params, save_args=save_args, force=True)
     print("Saved generator params to", ckpt_dir)
+
+
+def load_gen(ckpt_dir: str, model_def, rng_key, emb_dim, hidden_dims, z_dim, x_dim, out_dim):
+    """
+    Build and init the model, then restore params from `ckpt_dir`.
+    Returns (model, restored_params).
+    """
+
+    model = model_def(emb_dim=emb_dim, hidden_dims=hidden_dims, out_dim=out_dim)
+
+    # Initialize to get a like-shaped params pytree
+    dummy_z = jnp.zeros((1, z_dim))
+    dummy_x = jnp.zeros((1, x_dim))
+    init_vars = model.init(rng_key, dummy_z, dummy_x)          # {'params': ...}
+
+    # Restore directly into the like-shaped pytree (no restore_args needed)
+    checkpointer = ocp.PyTreeCheckpointer()
+    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
+
+    return model, restored_params
 
 
 

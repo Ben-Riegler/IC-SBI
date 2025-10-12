@@ -449,7 +449,7 @@ def plot_post_pairs(
     save_dir=None,
     x_vals=None,
     file_prefix="pairplot",
-    max_scatter=8000,
+    max_scatter=None,
     grid_size=200,
     chi2_probs=(0.50, 0.75, 0.90, 
                 # 0.95, 0.99
@@ -493,7 +493,7 @@ def plot_post_pairs(
         mu_full = post_mean[i]
         Sigma_full = post_cov[i]
 
-        sel = rng.choice(n_samps, size=min(n_samps, max_scatter), replace=False)
+        sel = rng.choice(n_samps, size=min(n_samps, max_scatter), replace=False) if max_scatter is not None else jnp.arange(n_samps)
 
         for r in range(d-1):        # rows map to y-index b = r+1
             for c in range(d-1):    # cols map to x-index a = c

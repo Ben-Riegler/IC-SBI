@@ -127,7 +127,7 @@ def train_marginal_mdns(key, model, x_data, θ_data,
         save_MDN(path, dim, state.params)
             
     t1 = time.perf_counter()
-    print(f"Training took {(t1-t0):.2f}s")
+    print(f"Saved all {d} MDNs, training took {(t1-t0):.2f}s")
 
     return losses_list, par_list
 

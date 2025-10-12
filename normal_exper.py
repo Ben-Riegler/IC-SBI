@@ -6,7 +6,7 @@ import numpy as np
 
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
-from data import gen_mv_normal_normal_data, mvn_posterior
+from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
 from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
@@ -18,17 +18,17 @@ os.makedirs(path, exist_ok=True)
 
 d = 3
 K = 5
-N = 1000
-mdn_batch_size = 1000
-mdn_epochs = 500
+N = 10000
+mdn_batch_size = 5000
+mdn_epochs = 5000
 mdn_lr = 1e-4
 mdn_hidden_dims = 2 * [8]
 
 emb_dim = 8
 gen_hidden_dims = 5 * [8]
-gen_epochs = 50
-gen_batch_size = 1000
-z_batch_size = 20
+gen_epochs = 1200
+gen_batch_size = 5000
+z_batch_size = 30
 gen_lr = 1e-4
 Nz = z_batch_size * N // gen_batch_size
 
@@ -56,7 +56,6 @@ np.savez_compressed(
     emb_dim=device_get(emb_dim),
     K=device_get(K)
 )
-
 
 z = random.normal(k4, (Nz, d))
 
@@ -87,7 +86,6 @@ plot_mvn_marginals(mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(
 u = get_cdf_vals(model=mdn, par_list=post_par_list, 
                  x_data=x_data,θ_data=θ_data)
 
-
 gen = generator(emb_dim=emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
 
 gen_state, losses = train_generator(k5,
@@ -104,11 +102,15 @@ plot_loss(losses, path+"gen/")
 # sample p(y,x) = p(x)p(y|x)
 # x_data ~ p(x)
 
-key, z_key = random.split(key)
+N_fit = 50000
+key, z_key, x_key = random.split(key, 3)
 
-z_samples = random.normal(z_key, (N, d))
-y_samples = gen.apply(gen_state.params, z=z_samples, x=x_data) # ~ p(y|x) (N, d)
-print(y_samples.shape)
+z_samples = random.normal(z_key, (N_fit, d))
+x_samples = sample_x_marginal(x_key, N_fit, prior_mean, L0, L1)
+y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N, d)
+
+
+
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
