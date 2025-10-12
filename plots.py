@@ -559,7 +559,7 @@ def plot_post_pairs(
             fig.show()
 
 
-def plot_marginal_cdf_vals(u, # (batch, N, d)
+def plot_marginal_cdf_hists(u, # (batch, N, d)
                            x, # (batch, d)
                            save_path=None
                            ):

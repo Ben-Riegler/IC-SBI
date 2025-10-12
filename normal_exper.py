@@ -7,7 +7,7 @@ import numpy as np
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
 from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs
+from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_cdf_hists
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
 
@@ -162,12 +162,12 @@ key, z_key = random.split(key)
 z_samples = random.normal(z_key, (test_locs, N_test, d))
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_test[:, None, :]) # (test_locs, N_test, d) each test_loc gets its own N_test samples
 
-
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 v = get_cdf_vals(model=mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
 
-
+# should be uniform if MDNs learned correctly
+plot_marginal_cdf_hists(v, x_test, save_path= path + "y_mdn/")
 
 # map into parameter space
 theta = mdn_inv_marg(model = mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
