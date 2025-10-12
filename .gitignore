@@ -2,6 +2,7 @@ gen/
 mdn/
 multi_mdn/
 normal_exp/
+run_exper.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
