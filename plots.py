@@ -559,6 +559,31 @@ def plot_post_pairs(
             fig.show()
 
 
+def plot_marginal_cdf_vals(u, # (batch, N, d)
+                           x, # (batch, d)
+                           save_path=None
+                           ):
 
+    locs, N, d = u.shape
+    fig, axes = plt.subplots(d, locs, figsize=(5*d, 3*locs), constrained_layout=True)
 
+    for row in range(d):
+        for col in range(locs):
+            ax = axes[row, col]
 
+            ax.hist(u[col, :, row])
+
+            if col == 0:
+                ax.set_ylabel(f"dim {row+1}")
+            
+            if row == 0:
+                ax.set_title(f"x = {jnp.round(x[col], 2)}")
+    
+    fig.suptitle(rf"Histograms of $U_j = F_j(Y_j \mid x)$")
+
+    if save_path is None:
+        fig.show()
+    else:
+    
+        os.makedirs(save_path, exist_ok=True)
+        fig.savefig(save_path + "cdf_hists.pdf")
