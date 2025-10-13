@@ -5,6 +5,7 @@ normal_exp/
 run_exper.sh
 SLURM_GPU/
 experiments/
+normal_test/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

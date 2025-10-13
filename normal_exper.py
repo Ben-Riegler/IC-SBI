@@ -1,4 +1,6 @@
 import os
+import pprint
+import jax
 import jax.numpy as jnp
 from jax import random
 from jax import device_get
@@ -13,9 +15,12 @@ from mdn_inv import mdn_inv_marg
 
 import argparse
 
+jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_debug_nans", True)
+
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--folder', type=str, default="experiments/")
+parser.add_argument('--folder', type=str, default="normal_test/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument('--d', type=int, default=2)
 
@@ -30,7 +35,7 @@ parser.add_argument("--emb_dim", type=int, default=8)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [8])
 parser.add_argument("--gen_epochs", type=int, default=1)
 parser.add_argument("--gen_batch_size", type=int, default=1)
-parser.add_argument("--z_batch_size", type=int, default=1)
+parser.add_argument("--z_batch_size", type=int, default=10)
 parser.add_argument('--gen_lr', type=float, default=1e-4)
 
 parser.add_argument("--N_fit", type=int, default=100)
@@ -39,9 +44,16 @@ parser.add_argument("--N_test", type=int, default=100)
 args = parser.parse_args()
 
 
+
+
 # set up and data
 path = "experiments/" + args.folder
 os.makedirs(path, exist_ok=True)
+
+# save args  
+with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
+    f.write(pprint.pformat(vars(args), width=100))
+ 
 
 d = args.d
 K = args.K
