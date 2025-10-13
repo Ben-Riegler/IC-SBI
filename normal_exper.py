@@ -15,7 +15,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--folder', type=str, default="results")
+parser.add_argument('--folder', type=str, default="experiments/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument('--d', type=int, default=2)
 
@@ -24,10 +24,10 @@ parser.add_argument('--N', type=int, default=100)
 parser.add_argument('--mdn_batch_size', type=int, default=1)
 parser.add_argument('--mdn_epochs', type=int, default=1)
 parser.add_argument('--mdn_lr', type=float, default=1e-4)
-parser.add_argument('--mdn_hidden_dims', type=list, default=2 * [8])
+parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=2 * [8])
 
 parser.add_argument("--emb_dim", type=int, default=8)
-parser.add_argument('--gen_hidden_dims', type=list, default=5 * [8])
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [8])
 parser.add_argument("--gen_epochs", type=int, default=1)
 parser.add_argument("--gen_batch_size", type=int, default=1)
 parser.add_argument("--z_batch_size", type=int, default=1)
@@ -40,7 +40,7 @@ args = parser.parse_args()
 
 
 # set up and data
-path = args.folder
+path = "experiments/" + args.folder
 os.makedirs(path, exist_ok=True)
 
 d = args.d

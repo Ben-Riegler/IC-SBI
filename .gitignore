@@ -3,6 +3,8 @@ mdn/
 multi_mdn/
 normal_exp/
 run_exper.sh
+SLURM_GPU/
+experiments/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
