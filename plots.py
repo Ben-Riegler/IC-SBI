@@ -444,8 +444,9 @@ import matplotlib.pyplot as plt
 
 def plot_post_pairs(
     theta,
-    post_mean,
-    post_cov,
+    theta_true=None,
+    post_mean=None,
+    post_cov=None,
     save_dir=None,
     x_vals=None,
     file_prefix="pairplot",
@@ -463,14 +464,16 @@ def plot_post_pairs(
     rng = np.random.default_rng(seed)
 
     theta = np.asarray(theta)
-    post_mean = np.asarray(post_mean)
-    if post_mean.ndim == 3 and post_mean.shape[-1] == 1:
-        post_mean = post_mean[..., 0]
-    post_cov = np.asarray(post_cov)
+    if post_mean is not None:
+        post_mean = np.asarray(post_mean)
+        if post_mean.ndim == 3 and post_mean.shape[-1] == 1:
+            post_mean = post_mean[..., 0]
+        post_cov = np.asarray(post_cov)
 
     n_x, n_samps, d = theta.shape
-    assert post_mean.shape == (n_x, d)
-    assert post_cov.shape == (n_x, d, d)
+    if post_mean is not None:
+        assert post_mean.shape == (n_x, d)
+        assert post_cov.shape == (n_x, d, d)
     if d < 2:
         raise ValueError("d must be >= 2 to form pairwise plots.")
 
@@ -486,12 +489,13 @@ def plot_post_pairs(
 
     for i in range(n_x):
         # (d-1) x (d-1) grid
-        fig, axes = plt.subplots(d-1, d-1, figsize=(3.0 * (d-1), 3.0 * (d-1)), constrained_layout=True)
+        fig, axes = plt.subplots(d-1, d-1, figsize=(3.0 * (d-1)+0.25, 3.0 * (d-1)+0.25), constrained_layout=True)
         if d-1 == 1:
             axes = np.array([[axes]])
 
-        mu_full = post_mean[i]
-        Sigma_full = post_cov[i]
+        if post_mean is not None:
+            mu_full = post_mean[i]
+            Sigma_full = post_cov[i]
 
         sel = rng.choice(n_samps, size=min(n_samps, max_scatter), replace=False) if max_scatter is not None else jnp.arange(n_samps)
 
@@ -508,37 +512,38 @@ def plot_post_pairs(
                 ys = theta[i, sel, b]
                 ax.scatter(xs, ys, s=4, alpha=0.35, linewidths=0)
 
-                mu = mu_full[[a, b]]
-                Sigma = Sigma_full[np.ix_([a, b], [a, b])]
-                det = np.linalg.det(Sigma)
-                if not np.isfinite(det) or det <= 0:
-                    jitter = 1e-6 * (np.trace(Sigma) / 2.0 if np.isfinite(np.trace(Sigma)) else 1.0)
-                    Sigma = Sigma + jitter * np.eye(2)
+                if post_mean is not None:
+                    mu = mu_full[[a, b]]
+                    Sigma = Sigma_full[np.ix_([a, b], [a, b])]
+                    det = np.linalg.det(Sigma)
+                    if not np.isfinite(det) or det <= 0:
+                        jitter = 1e-6 * (np.trace(Sigma) / 2.0 if np.isfinite(np.trace(Sigma)) else 1.0)
+                        Sigma = Sigma + jitter * np.eye(2)
 
-                inv = np.linalg.inv(Sigma)
-                std = np.sqrt(np.diag(Sigma))
+                    inv = np.linalg.inv(Sigma)
+                    std = np.sqrt(np.diag(Sigma))
 
-                x_min = np.minimum(xs.min(), mu[0] - k_sigma * std[0])
-                x_max = np.maximum(xs.max(), mu[0] + k_sigma * std[0])
-                y_min = np.minimum(ys.min(), mu[1] - k_sigma * std[1])
-                y_max = np.maximum(ys.max(), mu[1] + k_sigma * std[1])
+                    x_min = np.minimum(xs.min(), mu[0] - k_sigma * std[0])
+                    x_max = np.maximum(xs.max(), mu[0] + k_sigma * std[0])
+                    y_min = np.minimum(ys.min(), mu[1] - k_sigma * std[1])
+                    y_max = np.maximum(ys.max(), mu[1] + k_sigma * std[1])
 
-                if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
-                    pad = 1e-3 if np.isfinite(mu[0]) else 1.0
-                    x_min, x_max = mu[0] - pad, mu[0] + pad
-                if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min == y_max:
-                    pad = 1e-3 if np.isfinite(mu[1]) else 1.0
-                    y_min, y_max = mu[1] - pad, mu[1] + pad
+                    if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
+                        pad = 1e-3 if np.isfinite(mu[0]) else 1.0
+                        x_min, x_max = mu[0] - pad, mu[0] + pad
+                    if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min == y_max:
+                        pad = 1e-3 if np.isfinite(mu[1]) else 1.0
+                        y_min, y_max = mu[1] - pad, mu[1] + pad
 
-                xx = np.linspace(x_min, x_max, grid_size)
-                yy = np.linspace(y_min, y_max, grid_size)
-                XX, YY = np.meshgrid(xx, yy)
-                DX = XX - mu[0]
-                DY = YY - mu[1]
+                    xx = np.linspace(x_min, x_max, grid_size)
+                    yy = np.linspace(y_min, y_max, grid_size)
+                    XX, YY = np.meshgrid(xx, yy)
+                    DX = XX - mu[0]
+                    DY = YY - mu[1]
 
-                # Mahalanobis^2 field, contour at chi-square levels
-                R = DX * (inv[0, 0] * DX + inv[0, 1] * DY) + DY * (inv[1, 0] * DX + inv[1, 1] * DY)
-                ax.contour(XX, YY, R, levels=chi2_vals, linewidths=1.0)
+                    # Mahalanobis^2 field, contour at chi-square levels
+                    R = DX * (inv[0, 0] * DX + inv[0, 1] * DY) + DY * (inv[1, 0] * DX + inv[1, 1] * DY)
+                    ax.contour(XX, YY, R, levels=chi2_vals, linewidths=1.0)
 
                 if c == 0:
                     ax.set_ylabel(rf"$\theta_{{{b+1}}}$")
@@ -565,7 +570,7 @@ def plot_marginal_cdf_hists(u, # (batch, N, d)
                            ):
 
     locs, N, d = u.shape
-    fig, axes = plt.subplots(d, locs, figsize=(5*d, 3*locs), constrained_layout=True)
+    fig, axes = plt.subplots(d, locs, figsize=(4*d, 3*locs), constrained_layout=True)
 
     for row in range(d):
         for col in range(locs):
