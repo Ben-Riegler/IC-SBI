@@ -511,9 +511,11 @@ def plot_post_pairs(
                 xs = theta[i, sel, a]
                 ys = theta[i, sel, b]
                 ax.scatter(xs, ys, s=4, alpha=0.35, linewidths=0, label="approx samples")
-                xs_tr = theta_true[i, sel, a]
-                ys_tr = theta_true[i, sel, b]
-                ax.scatter(xs_tr, ys_tr, s=4, alpha=0.2, linewidths=0, color="red", label="true samples")
+                
+                if theta_true is not None:
+                    xs_tr = theta_true[i, sel, a]
+                    ys_tr = theta_true[i, sel, b]
+                    ax.scatter(xs_tr, ys_tr, s=4, alpha=0.2, linewidths=0, color="red", label="true samples")
 
                 if post_mean is not None:
                     mu = mu_full[[a, b]]
