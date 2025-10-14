@@ -41,7 +41,7 @@ parser.add_argument("--gen_batch_size", type=int, default=1)
 parser.add_argument("--z_batch_size", type=int, default=10)
 parser.add_argument('--gen_lr', type=float, default=1e-4)
 
-parser.add_argument("--N_fit", type=int, default=100000)
+parser.add_argument("--N_fit", type=int, default=10000)
 parser.add_argument("--N_test", type=int, default=100)
 
 args = parser.parse_args()
@@ -156,8 +156,6 @@ losses_list, y_par_list = train_marginal_mdns(y_key,
                                             lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
                                             path=path+"y_mdn/")
 
-print("ls", len(losses_list), len(losses_list[0]), len(losses_list[1]))
-
 plot_losses(losses_list, path+"y_mdn/")
 
 # test: posterior sampling
@@ -184,9 +182,17 @@ plot_marginal_cdf_hists(v, x_test, save_path= path + "y_mdn/")
 # map into parameter space
 theta = mdn_inv_marg(model = mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
 
+key, orc_key = random.split(key)
+theta_true = jnp.stack([sample_two_moons_posterior(orc_key, 
+                                                   x=x_test[i],
+                                                   n_samples=N_test,
+                                                   prior_low=p_low,
+                                                   prior_high=p_up) for i in range(test_locs)], axis=0)
+print(theta_true.shape)
 
 plot_post_pairs(
     theta=theta,
+    theta_true=theta_true,
     x_vals=x_test,
     save_dir=os.path.join(path, "pairplots"),
     file_prefix="posterior_pairs",

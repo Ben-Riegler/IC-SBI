@@ -510,7 +510,10 @@ def plot_post_pairs(
 
                 xs = theta[i, sel, a]
                 ys = theta[i, sel, b]
-                ax.scatter(xs, ys, s=4, alpha=0.35, linewidths=0)
+                ax.scatter(xs, ys, s=4, alpha=0.35, linewidths=0, label="approx samples")
+                xs_tr = theta_true[i, sel, a]
+                ys_tr = theta_true[i, sel, b]
+                ax.scatter(xs_tr, ys_tr, s=4, alpha=0.2, linewidths=0, color="red", label="true samples")
 
                 if post_mean is not None:
                     mu = mu_full[[a, b]]
@@ -555,6 +558,7 @@ def plot_post_pairs(
             x_str = np.array2string(np.asarray(x_vals[i]), precision=2, separator=", ")
             title += f"x={x_str}"
         fig.suptitle(title, fontsize=10)
+        fig.legend()
 
         if save_dir is not None:
             out_path = os.path.join(save_dir, f"{file_prefix}_{i}.png")
