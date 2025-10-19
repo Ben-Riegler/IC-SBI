@@ -6,6 +6,11 @@ run_exper.sh
 SLURM_GPU/
 experiments/
 normal_test/
+plots/
+plots.py
+play_moon.ipynb
+play_normal.ipynb
+notets.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -2,6 +2,7 @@ import os
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
+import jax
 
 def save_MDN(ckpt_dir: str, dim,  params) -> None:
     """
@@ -26,12 +27,47 @@ def load_MDN(ckpt_dir: str, model_def, rng_key, hidden_dims, K, x_dim):
     model = model_def(hidden_dims=hidden_dims, K=K)
 
     # Initialize to get a like-shaped params pytree
-    dummy_x = jnp.zeros((1, x_dim))
-    init_vars = model.init(rng_key, dummy_x)          # {'params': ...}
+    # dummy_x = jnp.zeros((1, x_dim))
+    # init_vars = model.init(rng_key, dummy_x)          # {'params': ...}
+    # params_like = init_vars["params"]                  # <-- match what you saved
 
-    # Restore directly into the like-shaped pytree (no restore_args needed)
+    # print(params_like)
+
+    # # Restore directly into the like-shaped params pytree, with restore_args
+    # checkpointer = ocp.PyTreeCheckpointer()
+    # restore_args = orbax_utils.restore_args_from_target(params_like)
+    # restored_params = checkpointer.restore(
+    #     ckpt_dir, item=params_like, restore_args=restore_args
+    # )
+    # # 
+
+    # # Restore directly into the like-shaped pytree (no restore_args needed)
+    # checkpointer = ocp.PyTreeCheckpointer()
+    # restored_params = checkpointer.restore(ckpt_dir, 
+    #                                        # item=init_vars
+    #           
+    
+     # Build a like-shaped params tree ON CPU so restore_args has CPU sharding.
+    cpu0 = jax.devices("cpu")[0]
+    dummy_x = jnp.zeros((1, x_dim))
+
+    with jax.default_device(cpu0):
+        init_vars = model.init(rng_key, dummy_x)   # {'params': ...}
+
+    # Make sure every leaf is placed/sharded on CPU explicitly.
+    params_like = jax.tree.map(lambda a: jax.device_put(a, cpu0), init_vars)
+
     checkpointer = ocp.PyTreeCheckpointer()
-    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
+    restore_args = orbax_utils.restore_args_from_target(params_like)
+
+    # Restore into params_like (NOT init_vars).
+    restored_params = checkpointer.restore(
+        ckpt_dir,
+        item=params_like,
+        restore_args=restore_args,
+    )
+
+                           
 
     return model, restored_params
 
@@ -84,11 +120,27 @@ def load_gen(ckpt_dir: str, model_def, rng_key, emb_dim, hidden_dims, z_dim, x_d
     # Initialize to get a like-shaped params pytree
     dummy_z = jnp.zeros((1, z_dim))
     dummy_x = jnp.zeros((1, x_dim))
-    init_vars = model.init(rng_key, dummy_z, dummy_x)          # {'params': ...}
 
-    # Restore directly into the like-shaped pytree (no restore_args needed)
+
+     # Build a like-shaped params tree ON CPU so restore_args has CPU sharding.
+    cpu0 = jax.devices("cpu")[0]
+
+    with jax.default_device(cpu0):
+        init_vars = model.init(rng_key, dummy_z, dummy_x)          # {'params': ...}
+
+    # Make sure every leaf is placed/sharded on CPU explicitly.
+    params_like = jax.tree.map(lambda a: jax.device_put(a, cpu0), init_vars)
+
     checkpointer = ocp.PyTreeCheckpointer()
-    restored_params = checkpointer.restore(ckpt_dir, item=init_vars)
+    restore_args = orbax_utils.restore_args_from_target(params_like)
+
+    # Restore into params_like (NOT init_vars).
+    restored_params = checkpointer.restore(
+        ckpt_dir,
+        item=params_like,
+        restore_args=restore_args,
+    )
+
 
     return model, restored_params
 
