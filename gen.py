@@ -29,8 +29,7 @@ class generator(nn.Module):
 
         h_z = nn.Dense(self.emb_dim)(z) # (..., emb_dim)
         h_x = nn.Dense(self.emb_dim)(x) # (..., emb_dim)
-
-        h = h_z + h_x # (..., emb_dim)
+        h = jnp.concatenate([h_z, h_x], axis=-1)# (..., 2*emb_dim)
 
         for dim in self.hidden_dims:
             h = nn.Dense(dim)(h)
@@ -56,8 +55,12 @@ def train_step(state: train_state.TrainState,
         # expand, we want all samples z to interact with each sample in x
         z_ = z[None, :, : ] # (1, z_batch, z_dim)
         x_ = x[:, None, :] # (batch, 1, x_dim)
+        tmp = z_ + x_
+        tmp = jnp.zeros_like(tmp)
+        z_ += tmp # (batch, z_batch, y_dim)
+        x_ += tmp # (batch, z_batch, y_dim)
         y = state.apply_fn(params, z_, x_) # (batch, z_batch, y_dim)
-        
+
         v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
 
         u_ = u[:, None, :] # (batch, 1, y_dim)
@@ -115,8 +118,8 @@ def train_generator(key,
     losses = []
 
     state = create_train_state(key, model, learning_rate, 
-                               (1, z_batch_size, z_dim),
-                               (batch_size, 1, x_dim)
+                               (z_dim),
+                               (x_dim)
                                )
     n_batches = Nx // batch_size
 
@@ -131,7 +134,6 @@ def train_generator(key,
         u = u[x_idc]
         z = z[z_idc]
         
-
         for b in range(0, n_batches):
 
             x_batch = x[b*batch_size : (b+1)*batch_size]
@@ -155,11 +157,11 @@ def train_generator(key,
 
 if __name__ == "__main__":
 
-    path = "gen/"
+    path = "experiments/gen/"
 
     N = 5000
     d = 4
-    n_epochs = 10
+    n_epochs = 1000
 
     batch_size = 5000
     z_batch_size = 20

@@ -92,7 +92,7 @@ def gen_two_moons_data(key, n_samples, prior_low, prior_high):
 
 def sample_two_moons_posterior(key, x, n_samples, prior_low, prior_high):
     """
-    
+
     Args:
         key: jax.random.PRNGKey
         x: array-like, shape (2,), observed data
@@ -107,14 +107,12 @@ def sample_two_moons_posterior(key, x, n_samples, prior_low, prior_high):
     low = jnp.asarray(prior_low).reshape(2,)
     high = jnp.asarray(prior_high).reshape(2,)
 
-    # Simulator hyperparameters (as in the PyTorch reference)
     a_low = -jnp.pi / 2.0
     a_high = +jnp.pi / 2.0
     base_offset = 0.25
     r_loc = 0.1
     r_scale = 0.01
 
-    # Rotation inverse (θ = R(+π/4) z)
     c = jnp.cos(jnp.pi / 4.0)
     s = jnp.sin(jnp.pi / 4.0)
 
@@ -123,27 +121,25 @@ def sample_two_moons_posterior(key, x, n_samples, prior_low, prior_high):
         a = random.uniform(ka, (m,), minval=a_low, maxval=a_high)
         r = r_loc + r_scale * random.normal(kr, (m,))
 
-        # Base point on arc
+
         p_x = jnp.cos(a) * r + base_offset
         p_y = jnp.sin(a) * r
 
-        # Invert mapping: |z0| = p_x - x[0], z1 = x[1] - p_y, with sign ambiguity on z0
         q0 = p_x - x[0]
         q1 = x[1] - p_y
         sign = jnp.where(random.uniform(ks, (m,)) < 0.5, -1.0, 1.0)
         z0 = sign * q0
         z1 = q1
 
-        # Rotate back to θ
         theta1 = c * z0 - s * z1
         theta2 = s * z0 + c * z1
         theta = jnp.stack([theta1, theta2], axis=1)
 
-        # Prior support filter
+
         mask = jnp.all((theta >= low) & (theta <= high), axis=1)
         return theta, mask
 
-    # Accumulate until we have n_samples within the prior box
+
     batch_size = max(4 * int(n_samples), 4096)
     collected = []
     total = 0
