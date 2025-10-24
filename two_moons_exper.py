@@ -10,7 +10,7 @@ import numpy as np
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
 from data import gen_two_moons_data, sample_two_moons_posterior
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_cdf_hists
+from plots import plot_loss, plot_losses, plot_mdn_marginals, plot_post_pairs, plot_marginal_cdf_hists
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
 

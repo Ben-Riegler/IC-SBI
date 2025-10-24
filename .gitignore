@@ -2,7 +2,8 @@ gen/
 mdn/
 multi_mdn/
 normal_exp/
-run_exper.sh
+run_normal.sh
+run_moon.sh
 SLURM_GPU/
 experiments/
 normal_test/
