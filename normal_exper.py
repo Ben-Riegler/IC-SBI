@@ -27,8 +27,8 @@ parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="No comment")
 
 # data
-parser.add_argument('--d', type=int, default=2)
-parser.add_argument('--N', type=int, default=10000)
+parser.add_argument('--d', type=int, default=4)
+parser.add_argument('--N', type=int, default=5000)
 
 # MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
@@ -45,15 +45,15 @@ parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [128]
 
 # generator training
 parser.add_argument("--gen_epochs", type=int, default=20)
-parser.add_argument("--gen_batch_size", type=int, default=10000)
+parser.add_argument("--gen_batch_size", type=int, default=5000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=100)
 
 # fit lat MDNs
-parser.add_argument("--lat_mdn_N_fit", type=int, default=50000)
+parser.add_argument("--lat_mdn_N_fit", type=int, default=5000)
 parser.add_argument('--lat_mdn_K', type=int, default=3)
 parser.add_argument('--lat_mdn_epochs', type=int, default=200)
-parser.add_argument('--lat_mdn_batch_size', type=int, default=25000)
+parser.add_argument('--lat_mdn_batch_size', type=int, default=5000)
 
 # test
 parser.add_argument("--N_test", type=int, default=5000)
@@ -198,12 +198,22 @@ N_test = args.N_test
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
 x_test = x_data[test_ids] # (test_locs, d)
-plot_mdn_marginals(model=lat_mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")
+plot_mdn_marginals(model=lat_mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), 
+                   path= path + "y_mdn/")
 
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (test_locs, N_test, d))
-y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 ))# (test_locs, N_test, d) each test_loc gets its own N_test samples
+y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 )) # (test_locs, N_test, d) each test_loc gets its own N_test samples
+
+plot_post_pairs(
+    theta=y_samples,
+    x_vals=x_test,
+    save_dir=os.path.join(path, "y_mdn/pairplots"),
+    file_prefix="bivariate_samples",
+    ax_lab=rf"y",
+)
+
 
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
