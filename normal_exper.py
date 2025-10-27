@@ -15,33 +15,49 @@ from mdn_inv import mdn_inv_marg
 
 import argparse
 
-jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", False)
 jax.config.update("jax_debug_nans", True)
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--folder', type=str, default="normal_test/")
+# prelim
+parser.add_argument('--folder', type=str, default="normal_test7/")
 parser.add_argument("--seed", type=int, default=1)
+
+# data
 parser.add_argument('--d', type=int, default=2)
+parser.add_argument('--N', type=int, default=1000)
 
-parser.add_argument('--K', type=int, default=2)
-parser.add_argument('--N', type=int, default=100)
-parser.add_argument('--post_mdn_batch_size', type=int, default=100)
-parser.add_argument('--post_mdn_epochs', type=int, default=100)
-parser.add_argument('--lat_mdn_batch_size', type=int, default=20000)
-parser.add_argument('--lat_mdn_epochs', type=int, default=200)
-parser.add_argument('--mdn_lr', type=float, default=1e-4)
-parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=2 * [8])
+# MDNs set up
+parser.add_argument('--K', type=int, default=3)
+parser.add_argument('--mdn_lr', type=float, default=1e-3)
+parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 
-parser.add_argument("--emb_dim", type=int, default=8)
+# post MDNs
+parser.add_argument('--post_mdn_epochs', type=int, default=1000)
+parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
+
+# lat MDNs
+parser.add_argument('--lat_mdn_epochs', type=int, default=1000)
+parser.add_argument('--lat_mdn_batch_size', type=int, default=1000)
+
+# generator architecture
+parser.add_argument("--emb_dim", type=int, default=32)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [8])
-parser.add_argument("--gen_epochs", type=int, default=1)
-parser.add_argument("--gen_batch_size", type=int, default=1)
-parser.add_argument("--z_batch_size", type=int, default=10)
-parser.add_argument('--gen_lr', type=float, default=1e-4)
 
-parser.add_argument("--N_fit", type=int, default=100000)
-parser.add_argument("--N_test", type=int, default=100)
+# generator training
+parser.add_argument("--gen_epochs", type=int, default=500)
+parser.add_argument("--gen_batch_size", type=int, default=1000)
+parser.add_argument('--gen_lr', type=float, default=1e-3)
+parser.add_argument("--z_batch_size", type=int, default=40)
+
+# fit final lat MDNs
+parser.add_argument("--N_fit", type=int, default=20000)
+parser.add_argument('--fit_lat_mdn_epochs', type=int, default=1000)
+parser.add_argument('--fit_lat_mdn_batch_size', type=int, default=20000)
+
+# test
+parser.add_argument("--N_test", type=int, default=5000)
 
 args = parser.parse_args()
 
@@ -72,6 +88,10 @@ gen_batch_size = args.gen_batch_size
 z_batch_size = args.z_batch_size
 gen_lr = args.gen_lr
 Nz = z_batch_size * N // gen_batch_size
+
+N_fit = args.N_fit
+fit_lat_mdn_epochs = args.fit_lat_mdn_epochs
+fit_lat_mdn_batch_size = args.fit_lat_mdn_batch_size
 
 
 
@@ -139,16 +159,15 @@ save_gen(path, gen_state.params)
 
 plot_loss(losses, path+"gen/")
 
-# fit MDNs to marginals F(y_j|x) for learned P(Y|x)
+# fit MDNs to marginals F(y_j|x) for learned p(y|x)
 # sample p(y,x) = p(x)p(y|x)
-# x_data ~ p(x)
+# x_data ~ p(x) or oracle DGP
 
-N_fit = args.N_fit
 key, z_key, x_key = random.split(key, 3)
 
 z_samples = random.normal(z_key, (N_fit, d))
 x_samples = sample_x_marginal(x_key, N_fit, prior_mean, L0, L1)
-y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N, d)
+y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
@@ -156,7 +175,7 @@ mdn = MDN(hidden_dims = mdn_hidden_dims,
 key, y_key = random.split(key)
 losses_list, y_par_list = train_marginal_mdns(y_key, 
                                             model=mdn, x_data=x_samples, θ_data=y_samples, 
-                                            lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
+                                            lr=mdn_lr, n_epochs=fit_lat_mdn_epochs, batch_size=fit_lat_mdn_batch_size, 
                                             path=path+"y_mdn/")
 
 plot_losses(losses_list, path+"y_mdn/")
@@ -173,7 +192,7 @@ plot_mdn_marginals(model=mdn, params=y_par_list, x_vals=x_test, theta_range=(-5,
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (test_locs, N_test, d))
-y_samples = gen.apply(gen_state.params, z=z_samples, x=x_test[:, None, :]) # (test_locs, N_test, d) each test_loc gets its own N_test samples
+y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 ))# (test_locs, N_test, d) each test_loc gets its own N_test samples
 
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)

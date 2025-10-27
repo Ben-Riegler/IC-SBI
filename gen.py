@@ -23,13 +23,15 @@ class generator(nn.Module):
     @nn.compact
     def __call__(self, z: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray: 
 
-        # batch dims need to be same or broadcastable to same shape (see `train_generator`)
+        # batch dims need to be same (see `train_generator`)
         # z: (..., z_dim)
         # x: (..., x_dim)   
 
         h_z = nn.Dense(self.emb_dim)(z) # (..., emb_dim)
         h_x = nn.Dense(self.emb_dim)(x) # (..., emb_dim)
-        h = jnp.concatenate([h_z, h_x], axis=-1)# (..., 2*emb_dim)
+        h = jnp.concatenate([h_z, h_x], axis=-1) # (..., 2*emb_dim)
+
+        # h = h_z + h_x # (..., emb_dim)
 
         for dim in self.hidden_dims:
             h = nn.Dense(dim)(h)
