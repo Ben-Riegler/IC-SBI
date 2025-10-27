@@ -22,13 +22,13 @@ jax.config.update("jax_debug_nans", True)
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="normal_test7/")
+parser.add_argument('--folder', type=str, default="normal_test13/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="No comment")
 
 # data
 parser.add_argument('--d', type=int, default=2)
-parser.add_argument('--N', type=int, default=1000)
+parser.add_argument('--N', type=int, default=10000)
 
 # MDNs set up
 parser.add_argument('--K', type=int, default=3)
@@ -36,23 +36,23 @@ parser.add_argument('--mdn_lr', type=float, default=1e-3)
 parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 
 # post MDNs
-parser.add_argument('--post_mdn_epochs', type=int, default=1000)
-parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
+parser.add_argument('--post_mdn_epochs', type=int, default=200)
+parser.add_argument('--post_mdn_batch_size', type=int, default=5000)
 
 # generator architecture
-parser.add_argument("--emb_dim", type=int, default=8)
-parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [8])
+parser.add_argument("--emb_dim", type=int, default=64)
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [128])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=500)
-parser.add_argument("--gen_batch_size", type=int, default=1000)
+parser.add_argument("--gen_epochs", type=int, default=20)
+parser.add_argument("--gen_batch_size", type=int, default=10000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument("--z_batch_size", type=int, default=40)
+parser.add_argument("--z_batch_size", type=int, default=100)
 
 # fit lat MDNs
-parser.add_argument("--N_fit", type=int, default=20000)
-parser.add_argument('--lat_mdn_epochs', type=int, default=1000)
-parser.add_argument('--lat_mdn_batch_size', type=int, default=1000)
+parser.add_argument("--N_fit", type=int, default=50000)
+parser.add_argument('--lat_mdn_epochs', type=int, default=200)
+parser.add_argument('--lat_mdn_batch_size', type=int, default=25000)
 
 # test
 parser.add_argument("--N_test", type=int, default=5000)
@@ -73,7 +73,6 @@ with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
     f.write(f"Comment: {comm}\n\n")
     f.write(pprint.pformat(arg_dict, width=100))
  
-
 d = args.d
 K = args.K
 N = args.N
@@ -95,9 +94,6 @@ Nz = z_batch_size * N // gen_batch_size
 N_fit = args.N_fit
 lat_mdn_batch_size = args.lat_mdn_batch_size
 lat_mdn_epochs = args.lat_mdn_epochs
-
-
-
 
 key = random.PRNGKey(args.seed)
 key, k1, k2, k3, k4, k5 = random.split(key, 6)
@@ -124,6 +120,7 @@ np.savez_compressed(
 
 z = random.normal(k4, (Nz, d))
 
+print("\n----------Generating data----------\n")
 x_data, θ_data = gen_mv_normal_normal_data(k1, 
                                             n_samples=N, 
                                             prior_mean=prior_mean,
@@ -132,11 +129,15 @@ x_data, θ_data = gen_mv_normal_normal_data(k1,
 
 post_mean, post_var = mvn_posterior(x_data, prior_mean, L0, L1)
 
-print(x_data.shape, θ_data.shape, post_mean.shape, post_var.shape)
+print("x: ", x_data.shape, 
+      "theta: ", θ_data.shape, 
+      "post means: ", post_mean.shape, 
+      "post var", post_var.shape)
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
 
+print("\n----------Train posterior MDNs----------\n")
 losses_list, post_par_list = train_marginal_mdns(k2, 
                                             model=mdn, x_data=x_data, θ_data=θ_data, 
                                             lr=mdn_lr, n_epochs=post_mdn_epochs, batch_size=post_mdn_batch_size, 
@@ -153,6 +154,7 @@ u = get_cdf_vals(model=mdn, par_list=post_par_list,
 
 gen = generator(emb_dim=emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
 
+print("\n----------Train generator----------\n")
 gen_state, losses = train_generator(k5,
                                 model=gen,
                                 u=u, x=x_data, z=z, 
@@ -176,6 +178,7 @@ y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_
 mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = K)
 
+print("\n----------Train latents MDNs----------\n")
 key, y_key = random.split(key)
 losses_list, y_par_list = train_marginal_mdns(y_key, 
                                             model=mdn, x_data=x_samples, θ_data=y_samples, 
@@ -184,6 +187,7 @@ losses_list, y_par_list = train_marginal_mdns(y_key,
 
 plot_losses(losses_list, path+"y_mdn/")
 
+print("\n----------Test model----------\n")
 # test: posterior sampling
 test_locs = 4
 N_test = args.N_test
@@ -220,3 +224,7 @@ plot_post_pairs(
     save_dir=os.path.join(path, "pairplots"),
     file_prefix="posterior_pairs",
 )
+
+print("\npairplots saved\n")
+print("\ndone!")
+
