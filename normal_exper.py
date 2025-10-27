@@ -31,26 +31,27 @@ parser.add_argument('--d', type=int, default=2)
 parser.add_argument('--N', type=int, default=10000)
 
 # MDNs set up
-parser.add_argument('--K', type=int, default=3)
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
 parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 
 # post MDNs
+parser.add_argument('--post_mdn_K', type=int, default=3)
 parser.add_argument('--post_mdn_epochs', type=int, default=200)
 parser.add_argument('--post_mdn_batch_size', type=int, default=5000)
 
 # generator architecture
-parser.add_argument("--emb_dim", type=int, default=64)
+parser.add_argument("--gen_emb_dim", type=int, default=64)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [128])
 
 # generator training
 parser.add_argument("--gen_epochs", type=int, default=20)
 parser.add_argument("--gen_batch_size", type=int, default=10000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument("--z_batch_size", type=int, default=100)
+parser.add_argument("--gen_z_batch_size", type=int, default=100)
 
 # fit lat MDNs
-parser.add_argument("--N_fit", type=int, default=50000)
+parser.add_argument("--lat_mdn_N_fit", type=int, default=50000)
+parser.add_argument('--lat_mdn_K', type=int, default=3)
 parser.add_argument('--lat_mdn_epochs', type=int, default=200)
 parser.add_argument('--lat_mdn_batch_size', type=int, default=25000)
 
@@ -74,24 +75,25 @@ with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
     f.write(pprint.pformat(arg_dict, width=100))
  
 d = args.d
-K = args.K
 N = args.N
+
+post_mdn_K = args.post_mdn_K
 post_mdn_batch_size = args.post_mdn_batch_size
 post_mdn_epochs = args.post_mdn_epochs
 
 mdn_lr = args.mdn_lr
 mdn_hidden_dims = args.mdn_hidden_dims
 
-emb_dim = args.emb_dim
-
+gen_emb_dim = args.gen_emb_dim
 gen_hidden_dims = args.gen_hidden_dims
 gen_epochs = args.gen_epochs
 gen_batch_size = args.gen_batch_size
-z_batch_size = args.z_batch_size
+gen_z_batch_size = args.gen_z_batch_size
 gen_lr = args.gen_lr
-Nz = z_batch_size * N // gen_batch_size
+Nz = gen_z_batch_size * N // gen_batch_size
 
-N_fit = args.N_fit
+lat_mdn_N_fit = args.lat_mdn_N_fit
+lat_mdn_K = args.lat_mdn_K
 lat_mdn_batch_size = args.lat_mdn_batch_size
 lat_mdn_epochs = args.lat_mdn_epochs
 
@@ -114,8 +116,9 @@ np.savez_compressed(
     os.path.join(path, "Pars.npz"),
     mdn_hidden_dims=device_get(mdn_hidden_dims),             
     gen_hidden_dims=device_get(gen_hidden_dims),
-    emb_dim=device_get(emb_dim),
-    K=device_get(K)
+    emb_dim=device_get(gen_emb_dim),
+    post_mdn_K=device_get(post_mdn_K),
+    lat_mdn_K=device_get(lat_mdn_K)
 )
 
 z = random.normal(k4, (Nz, d))
@@ -135,7 +138,7 @@ print("x: ", x_data.shape,
       "post var", post_var.shape)
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
-          K = K)
+          K = post_mdn_K)
 
 print("\n----------Train posterior MDNs----------\n")
 losses_list, post_par_list = train_marginal_mdns(k2, 
@@ -152,14 +155,14 @@ plot_mvn_marginals(mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(
 u = get_cdf_vals(model=mdn, par_list=post_par_list, 
                  x_data=x_data,θ_data=θ_data)
 
-gen = generator(emb_dim=emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
+gen = generator(emb_dim=gen_emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
 
 print("\n----------Train generator----------\n")
 gen_state, losses = train_generator(k5,
                                 model=gen,
                                 u=u, x=x_data, z=z, 
                                 learning_rate=gen_lr, 
-                                n_epochs=gen_epochs, batch_size=gen_batch_size, z_batch_size=z_batch_size)
+                                n_epochs=gen_epochs, batch_size=gen_batch_size, z_batch_size=gen_z_batch_size)
 
 save_gen(path, gen_state.params)
 
@@ -171,12 +174,12 @@ plot_loss(losses, path+"gen/")
 
 key, z_key, x_key = random.split(key, 3)
 
-z_samples = random.normal(z_key, (N_fit, d))
-x_samples = sample_x_marginal(x_key, N_fit, prior_mean, L0, L1)
+z_samples = random.normal(z_key, (lat_mdn_N_fit, d))
+x_samples = sample_x_marginal(x_key, lat_mdn_N_fit, prior_mean, L0, L1)
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
 
 mdn = MDN(hidden_dims = mdn_hidden_dims,
-          K = K)
+          K = lat_mdn_K)
 
 print("\n----------Train latents MDNs----------\n")
 key, y_key = random.split(key)
