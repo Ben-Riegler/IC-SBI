@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import pprint
 import jax
 import jax.numpy as jnp
@@ -37,12 +38,8 @@ parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 parser.add_argument('--post_mdn_epochs', type=int, default=1000)
 parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
 
-# lat MDNs
-parser.add_argument('--lat_mdn_epochs', type=int, default=1000)
-parser.add_argument('--lat_mdn_batch_size', type=int, default=1000)
-
 # generator architecture
-parser.add_argument("--emb_dim", type=int, default=32)
+parser.add_argument("--emb_dim", type=int, default=8)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [8])
 
 # generator training
@@ -51,10 +48,10 @@ parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--z_batch_size", type=int, default=40)
 
-# fit final lat MDNs
+# fit lat MDNs
 parser.add_argument("--N_fit", type=int, default=20000)
-parser.add_argument('--fit_lat_mdn_epochs', type=int, default=1000)
-parser.add_argument('--fit_lat_mdn_batch_size', type=int, default=20000)
+parser.add_argument('--lat_mdn_epochs', type=int, default=1000)
+parser.add_argument('--lat_mdn_batch_size', type=int, default=1000)
 
 # test
 parser.add_argument("--N_test", type=int, default=5000)
@@ -65,8 +62,13 @@ args = parser.parse_args()
 path = "experiments/" + args.folder
 os.makedirs(path, exist_ok=True)
 
-# save args  
+# save config
+
+
+
 with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
+    f.write(str(datetime.now()))
+    f.write("\n\n")
     f.write(pprint.pformat(vars(args), width=100))
  
 
@@ -75,8 +77,7 @@ K = args.K
 N = args.N
 post_mdn_batch_size = args.post_mdn_batch_size
 post_mdn_epochs = args.post_mdn_epochs
-lat_mdn_batch_size = args.lat_mdn_batch_size
-lat_mdn_epochs = args.lat_mdn_epochs
+
 mdn_lr = args.mdn_lr
 mdn_hidden_dims = args.mdn_hidden_dims
 
@@ -90,8 +91,9 @@ gen_lr = args.gen_lr
 Nz = z_batch_size * N // gen_batch_size
 
 N_fit = args.N_fit
-fit_lat_mdn_epochs = args.fit_lat_mdn_epochs
-fit_lat_mdn_batch_size = args.fit_lat_mdn_batch_size
+lat_mdn_batch_size = args.lat_mdn_batch_size
+lat_mdn_epochs = args.lat_mdn_epochs
+
 
 
 
@@ -175,7 +177,7 @@ mdn = MDN(hidden_dims = mdn_hidden_dims,
 key, y_key = random.split(key)
 losses_list, y_par_list = train_marginal_mdns(y_key, 
                                             model=mdn, x_data=x_samples, θ_data=y_samples, 
-                                            lr=mdn_lr, n_epochs=fit_lat_mdn_epochs, batch_size=fit_lat_mdn_batch_size, 
+                                            lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
                                             path=path+"y_mdn/")
 
 plot_losses(losses_list, path+"y_mdn/")
