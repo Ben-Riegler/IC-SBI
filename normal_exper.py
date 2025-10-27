@@ -24,6 +24,7 @@ parser = argparse.ArgumentParser()
 # prelim
 parser.add_argument('--folder', type=str, default="normal_test7/")
 parser.add_argument("--seed", type=int, default=1)
+parser.add_argument("--comment", type=str, default="No comment")
 
 # data
 parser.add_argument('--d', type=int, default=2)
@@ -63,13 +64,14 @@ path = "experiments/" + args.folder
 os.makedirs(path, exist_ok=True)
 
 # save config
-
-
-
+arg_dict = vars(args)
+comm = arg_dict["comment"]
+arg_dict.pop("comment")
 with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
     f.write(str(datetime.now()))
     f.write("\n\n")
-    f.write(pprint.pformat(vars(args), width=100))
+    f.write(f"Comment: {comm}\n\n")
+    f.write(pprint.pformat(arg_dict, width=100))
  
 
 d = args.d
