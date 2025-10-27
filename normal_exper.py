@@ -137,22 +137,22 @@ print("x: ", x_data.shape,
       "post means: ", post_mean.shape, 
       "post var", post_var.shape)
 
-mdn = MDN(hidden_dims = mdn_hidden_dims,
+post_mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = post_mdn_K)
 
 print("\n----------Train posterior MDNs----------\n")
 losses_list, post_par_list = train_marginal_mdns(k2, 
-                                            model=mdn, x_data=x_data, θ_data=θ_data, 
+                                            model=post_mdn, x_data=x_data, θ_data=θ_data, 
                                             lr=mdn_lr, n_epochs=post_mdn_epochs, batch_size=post_mdn_batch_size, 
                                             path=path+"post_mdn/")
 plot_losses(losses_list, path+"post_mdn/")
 
 test_ids = random.choice(k3, N, (4,))
 x_test = x_data[test_ids]
-plot_mvn_marginals(mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
+plot_mvn_marginals(post_mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
 
 
-u = get_cdf_vals(model=mdn, par_list=post_par_list, 
+u = get_cdf_vals(model=post_mdn, par_list=post_par_list, 
                  x_data=x_data,θ_data=θ_data)
 
 gen = generator(emb_dim=gen_emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
@@ -178,13 +178,13 @@ z_samples = random.normal(z_key, (lat_mdn_N_fit, d))
 x_samples = sample_x_marginal(x_key, lat_mdn_N_fit, prior_mean, L0, L1)
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
 
-mdn = MDN(hidden_dims = mdn_hidden_dims,
+lat_mdn = MDN(hidden_dims = mdn_hidden_dims,
           K = lat_mdn_K)
 
 print("\n----------Train latents MDNs----------\n")
 key, y_key = random.split(key)
 losses_list, y_par_list = train_marginal_mdns(y_key, 
-                                            model=mdn, x_data=x_samples, θ_data=y_samples, 
+                                            model=lat_mdn, x_data=x_samples, θ_data=y_samples, 
                                             lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
                                             path=path+"y_mdn/")
 
@@ -198,7 +198,7 @@ N_test = args.N_test
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
 x_test = x_data[test_ids] # (test_locs, d)
-plot_mdn_marginals(model=mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")
+plot_mdn_marginals(model=lat_mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), path= path + "y_mdn/")
 
 key, z_key = random.split(key)
 
@@ -207,13 +207,13 @@ y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None
 
 # map into learned copula space
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
-v = get_cdf_vals(model=mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
+v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
 
 # should be uniform if MDNs learned correctly
 plot_marginal_cdf_hists(v, x_test, save_path= path + "y_mdn/")
 
 # map into parameter space
-theta = mdn_inv_marg(model = mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
+theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
 
 # Ground truth posterior at x_test
 mu_gt  = post_mean[test_ids]        
