@@ -10,7 +10,7 @@ import numpy as np
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
 from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_cdf_hists
+from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
 
@@ -44,7 +44,7 @@ parser.add_argument("--gen_emb_dim", type=int, default=64)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [128])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=20)
+parser.add_argument("--gen_epochs", type=int, default=1)
 parser.add_argument("--gen_batch_size", type=int, default=5000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=100)
@@ -206,6 +206,8 @@ key, z_key = random.split(key)
 z_samples = random.normal(z_key, (test_locs, N_test, d))
 y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 )) # (test_locs, N_test, d) each test_loc gets its own N_test samples
 
+plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
+
 plot_post_pairs(
     theta=y_samples,
     x_vals=x_test,
@@ -220,7 +222,7 @@ x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
 
 # should be uniform if MDNs learned correctly
-plot_marginal_cdf_hists(v, x_test, save_path= path + "y_mdn/")
+plot_marginal_hists(v, x_test, save_path= path + "y_mdn/")
 
 # map into parameter space
 theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
