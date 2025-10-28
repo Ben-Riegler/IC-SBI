@@ -10,7 +10,7 @@ import numpy as np
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
 from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists
+from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists, plot_marginals_and_mdn
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
 
@@ -27,8 +27,8 @@ parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="No comment")
 
 # data
-parser.add_argument('--d', type=int, default=4)
-parser.add_argument('--N', type=int, default=5000)
+parser.add_argument('--d', type=int, default=2)
+parser.add_argument('--N', type=int, default=10000)
 
 # MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
@@ -36,24 +36,24 @@ parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 
 # post MDNs
 parser.add_argument('--post_mdn_K', type=int, default=3)
-parser.add_argument('--post_mdn_epochs', type=int, default=200)
+parser.add_argument('--post_mdn_epochs', type=int, default=20)
 parser.add_argument('--post_mdn_batch_size', type=int, default=5000)
 
 # generator architecture
-parser.add_argument("--gen_emb_dim", type=int, default=64)
-parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [128])
+parser.add_argument("--gen_emb_dim", type=int, default=16)
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [32])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=1)
+parser.add_argument("--gen_epochs", type=int, default=50)
 parser.add_argument("--gen_batch_size", type=int, default=5000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=100)
 
 # fit lat MDNs
-parser.add_argument("--lat_mdn_N_fit", type=int, default=5000)
+parser.add_argument("--lat_mdn_N_fit", type=int, default=30000)
 parser.add_argument('--lat_mdn_K', type=int, default=3)
 parser.add_argument('--lat_mdn_epochs', type=int, default=200)
-parser.add_argument('--lat_mdn_batch_size', type=int, default=5000)
+parser.add_argument('--lat_mdn_batch_size', type=int, default=10000)
 
 # test
 parser.add_argument("--N_test", type=int, default=5000)
@@ -198,13 +198,14 @@ N_test = args.N_test
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
 x_test = x_data[test_ids] # (test_locs, d)
-plot_mdn_marginals(model=lat_mdn, params=y_par_list, x_vals=x_test, theta_range=(-5, 5), 
-                   path= path + "y_mdn/")
 
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (test_locs, N_test, d))
 y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 )) # (test_locs, N_test, d) each test_loc gets its own N_test samples
+
+plot_marginals_and_mdn(model=lat_mdn, params=y_par_list, x_vals=x_test, sample=y_samples, x_lab=rf"$y_j$",
+                   path= path + "y_mdn/")
 
 plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
 
