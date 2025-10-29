@@ -33,12 +33,13 @@ parser.add_argument('--N', type=int, default=10000)
 
 # MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
-parser.add_argument('--mdn_hidden_dims',  nargs='+', type=int, default=3 * [8])
 
 # post MDNs
 parser.add_argument('--post_mdn_K', type=int, default=3)
+parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=3 * [8])
 parser.add_argument('--post_mdn_epochs', type=int, default=20)
 parser.add_argument('--post_mdn_batch_size', type=int, default=5000)
+
 
 # generator architecture
 parser.add_argument("--gen_emb_dim", type=int, default=16)
@@ -53,6 +54,7 @@ parser.add_argument("--gen_z_batch_size", type=int, default=100)
 # fit lat MDNs
 parser.add_argument("--lat_mdn_N_fit", type=int, default=30000)
 parser.add_argument('--lat_mdn_K', type=int, default=3)
+parser.add_argument('--lat_mdn_hidden',  nargs='+', type=int, default=3 * [8])
 parser.add_argument('--lat_mdn_epochs', type=int, default=200)
 parser.add_argument('--lat_mdn_batch_size', type=int, default=10000)
 
@@ -79,11 +81,12 @@ d = args.d
 N = args.N
 
 post_mdn_K = args.post_mdn_K
+post_mdn_hidden = args.post_mdn_hidden
 post_mdn_batch_size = args.post_mdn_batch_size
 post_mdn_epochs = args.post_mdn_epochs
 
 mdn_lr = args.mdn_lr
-mdn_hidden_dims = args.mdn_hidden_dims
+
 
 gen_emb_dim = args.gen_emb_dim
 gen_hidden_dims = args.gen_hidden_dims
@@ -94,6 +97,7 @@ gen_lr = args.gen_lr
 Nz = gen_z_batch_size * N // gen_batch_size
 
 lat_mdn_N_fit = args.lat_mdn_N_fit
+lat_mdn_hidden = args.lat_mdn_hidden
 lat_mdn_K = args.lat_mdn_K
 lat_mdn_batch_size = args.lat_mdn_batch_size
 lat_mdn_epochs = args.lat_mdn_epochs
@@ -115,7 +119,8 @@ np.savez_compressed(
 
 np.savez_compressed(
     os.path.join(path, "Pars.npz"),
-    mdn_hidden_dims=device_get(mdn_hidden_dims),             
+    post_mdn_hidden=device_get(post_mdn_hidden),   
+    lat_mdn_hidden=device_get(lat_mdn_hidden),           
     gen_hidden_dims=device_get(gen_hidden_dims),
     emb_dim=device_get(gen_emb_dim),
     post_mdn_K=device_get(post_mdn_K),
@@ -138,7 +143,7 @@ print("x: ", x_data.shape,
       "post means: ", post_mean.shape, 
       "post var", post_var.shape)
 
-post_mdn = MDN(hidden_dims = mdn_hidden_dims,
+post_mdn = MDN(hidden_dims = post_mdn_hidden,
           K = post_mdn_K)
 
 print("\n----------Train posterior MDNs----------\n")
@@ -179,7 +184,7 @@ z_samples = random.normal(z_key, (lat_mdn_N_fit, d))
 x_samples = sample_x_marginal(x_key, lat_mdn_N_fit, prior_mean, L0, L1)
 y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
 
-lat_mdn = MDN(hidden_dims = mdn_hidden_dims,
+lat_mdn = MDN(hidden_dims = lat_mdn_hidden,
           K = lat_mdn_K)
 
 print("\n----------Train latents MDNs----------\n")
