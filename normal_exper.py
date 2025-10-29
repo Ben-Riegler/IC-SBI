@@ -16,8 +16,9 @@ from mdn_inv import mdn_inv_marg
 
 import argparse
 
-jax.config.update("jax_enable_x64", False)
+jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_debug_nans", True)
+os.environ["JAX_TRACEBACK_FILTERING"] = "0"
 
 parser = argparse.ArgumentParser()
 
