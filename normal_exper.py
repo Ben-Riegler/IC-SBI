@@ -223,7 +223,7 @@ x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
 
 # should be uniform if MDNs learned correctly
-plot_marginal_hists(v, x_test, save_path= path + "y_mdn/")
+plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf")
 
 # map into parameter space
 theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
