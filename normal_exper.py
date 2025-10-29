@@ -13,6 +13,8 @@ from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
 from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists, plot_marginals_and_mdn
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
+from ecdf import sig_marg_ecdf_vals, marg_ecdf_vals
+from utils import str2bool
 
 import argparse
 
@@ -46,12 +48,13 @@ parser.add_argument("--gen_emb_dim", type=int, default=16)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [32])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=50)
+parser.add_argument("--gen_epochs", type=int, default=10)
 parser.add_argument("--gen_batch_size", type=int, default=5000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=100)
 
 # fit lat MDNs
+parser.add_argument("--lat_use_ecdf", type=str2bool, default="True")
 parser.add_argument("--lat_mdn_N_fit", type=int, default=30000)
 parser.add_argument('--lat_mdn_K', type=int, default=3)
 parser.add_argument('--lat_mdn_hidden',  nargs='+', type=int, default=3 * [8])
@@ -59,7 +62,7 @@ parser.add_argument('--lat_mdn_epochs', type=int, default=200)
 parser.add_argument('--lat_mdn_batch_size', type=int, default=10000)
 
 # test
-parser.add_argument("--N_test", type=int, default=5000)
+parser.add_argument("--N_test", type=int, default=20000)
 
 args = parser.parse_args()
 
@@ -80,6 +83,8 @@ with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
 d = args.d
 N = args.N
 
+lat_use_ecdf = args.lat_use_ecdf
+
 post_mdn_K = args.post_mdn_K
 post_mdn_hidden = args.post_mdn_hidden
 post_mdn_batch_size = args.post_mdn_batch_size
@@ -96,6 +101,7 @@ gen_z_batch_size = args.gen_z_batch_size
 gen_lr = args.gen_lr
 Nz = gen_z_batch_size * N // gen_batch_size
 
+lat_use_ecdf = args.lat_use_ecdf
 lat_mdn_N_fit = args.lat_mdn_N_fit
 lat_mdn_hidden = args.lat_mdn_hidden
 lat_mdn_K = args.lat_mdn_K
@@ -174,27 +180,29 @@ save_gen(path, gen_state.params)
 
 plot_loss(losses, path+"gen/")
 
-# fit MDNs to marginals F(y_j|x) for learned p(y|x)
-# sample p(y,x) = p(x)p(y|x)
-# x_data ~ p(x) or oracle DGP
+if not lat_use_ecdf:
+    print("\n----------Train latents MDNs----------\n")
 
-key, z_key, x_key = random.split(key, 3)
+    # fit MDNs to marginals F(y_j|x) for learned p(y|x)
+    # sample p(y,x) = p(x)p(y|x)
+    # x_data ~ p(x) or oracle DGP
 
-z_samples = random.normal(z_key, (lat_mdn_N_fit, d))
-x_samples = sample_x_marginal(x_key, lat_mdn_N_fit, prior_mean, L0, L1)
-y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
+    key, z_key, x_key = random.split(key, 3)
 
-lat_mdn = MDN(hidden_dims = lat_mdn_hidden,
-          K = lat_mdn_K)
+    z_samples = random.normal(z_key, (lat_mdn_N_fit, d))
+    x_samples = sample_x_marginal(x_key, lat_mdn_N_fit, prior_mean, L0, L1)
+    y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples) # ~ p(y|x) (N_fit, d)
 
-print("\n----------Train latents MDNs----------\n")
-key, y_key = random.split(key)
-losses_list, y_par_list = train_marginal_mdns(y_key, 
-                                            model=lat_mdn, x_data=x_samples, θ_data=y_samples, 
-                                            lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
-                                            path=path+"y_mdn/")
+    lat_mdn = MDN(hidden_dims = lat_mdn_hidden,
+            K = lat_mdn_K)
 
-plot_losses(losses_list, path+"y_mdn/")
+    key, y_key = random.split(key)
+    losses_list, y_par_list = train_marginal_mdns(y_key, 
+                                                model=lat_mdn, x_data=x_samples, θ_data=y_samples, 
+                                                lr=mdn_lr, n_epochs=lat_mdn_epochs, batch_size=lat_mdn_batch_size, 
+                                                path=path+"y_mdn/")
+
+    plot_losses(losses_list, path+"y_mdn/")
 
 print("\n----------Test model----------\n")
 # test: posterior sampling
@@ -204,14 +212,12 @@ N_test = args.N_test
 key, t_key = random.split(key)
 test_ids = random.choice(t_key, N, (test_locs,))
 x_test = x_data[test_ids] # (test_locs, d)
+x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 
 key, z_key = random.split(key)
 
 z_samples = random.normal(z_key, (test_locs, N_test, d))
 y_samples = gen.apply(gen_state.params, z=z_samples, x=jnp.repeat(x_test[:, None, :], repeats = N_test, axis = 1 )) # (test_locs, N_test, d) each test_loc gets its own N_test samples
-
-plot_marginals_and_mdn(model=lat_mdn, params=y_par_list, x_vals=x_test, sample=y_samples, x_lab=rf"$y_j$",
-                   path= path + "y_mdn/")
 
 plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
 
@@ -223,11 +229,15 @@ plot_post_pairs(
     ax_lab=rf"y",
 )
 
-
 # map into learned copula space
-x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
-v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
-
+if lat_use_ecdf:
+    print("Using ECDF to map into learned copula space")
+    v = marg_ecdf_vals(y_samples)
+else:
+    print("Using learned MDNs to map into learned copula space")
+    v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
+    plot_marginals_and_mdn(model=lat_mdn, params=y_par_list, x_vals=x_test, sample=y_samples, x_lab=rf"$y_j$",
+                    path= path + "y_mdn/")
 # should be uniform if MDNs learned correctly
 plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf")
 

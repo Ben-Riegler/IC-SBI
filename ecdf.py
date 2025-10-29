@@ -48,18 +48,48 @@ def sig_marg_ecdf_vals(y, alpha = jnp.array(10)):
 
     return jnp.swapaxes(ecdf, 1, 2) # (batch, z_batch, y_dim)
 
+# @jax.jit
+def marg_ecdf_vals(y):
+    """
+    Compute marginal ECDF values (not sorted!)
+
+    Args
+        y (jnp.array): (batch, z_batch, y_dim)
+        alpha (jnp.array): (1, 1)
+
+    Returns
+        ecdf (jnp.array): (batch, z_batch, y_dim)
+    """
+
+    y = jnp.swapaxes(y, 1, 2) # (batch, y_dim, z_batch)
+    idcs = jnp.argsort(y, axis=-1)
+    ranks = jnp.argsort(idcs, axis=-1)
+
+    ecdf = (ranks+1) / y.shape[-1]
+    return jnp.swapaxes(ecdf, 1, 2) # (batch, z_batch, y_dim)
+    
+
+
 if __name__ == "__main__":
     
     key = random.PRNGKey(1)
     n = 5000
-    y = random.normal(key, (5, n, 2))
+    y = random.normal(key, (1, n, 2))
 
     t0 = time.perf_counter()
     ecdf = sig_marg_ecdf_vals(y, alpha=10)
+
+    ecdf2 = marg_ecdf_vals(y)
+
     t1 = time.perf_counter()
     print(f"{(t1-t0):.2f}")
 
-    # print(y)
-    print(ecdf.shape)
-    plt.scatter(y[..., 0], ecdf[..., 0], s=1)
+    plt.scatter(y[0,:, 0], ecdf[0,:, 0], s=1)
+    plt.show()
+    plt.hist(ecdf[0,:, 0])
+    plt.show()
+    
+    plt.scatter(y[0,:, 0], ecdf2[0,:, 0], s=1)
+    plt.show()
+    plt.hist(ecdf2[0,:, 0])
     plt.show()
