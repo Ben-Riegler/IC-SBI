@@ -3,6 +3,7 @@ from jax import random
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import time
+from jax.scipy.stats import norm
 
 jax.config.update("jax_enable_x64", True)
 
@@ -20,7 +21,7 @@ def sig_marg_ecdf_vals(y, alpha = jnp.array(10)):
     """
 
     y = jnp.swapaxes(y, 1, 2) # (batch, y_dim, z_batch)
-    s_diff = alpha * (y[..., None] - y[..., None, :]) # (batch, y_dim, z_batch, z_batch)
+    s_diff =  alpha * (y[..., None] - y[..., None, :]) # (batch, y_dim, z_batch, z_batch)
     log_mat = jax.nn.sigmoid(s_diff)
 
     ecdf = log_mat.mean(axis=-1) # (batch, y_dim, z_batch)
@@ -66,6 +67,10 @@ if __name__ == "__main__":
     print(f"{(t1-t0):.2f}")
 
     plt.scatter(y[0,:, 0], ecdf[0,:, 0], s=1)
+    plt.scatter(y[0,:, 0], norm.cdf(y[0,:, 0]), s=1)
+
+
+
     plt.show()
     plt.hist(ecdf[0,:, 0])
     plt.show()

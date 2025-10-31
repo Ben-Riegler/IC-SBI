@@ -30,7 +30,7 @@ parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="No comment")
 
 # data
-parser.add_argument('--d', type=int, default=2)
+parser.add_argument('--d', type=int, default=3)
 parser.add_argument('--N', type=int, default=10000)
 
 # MDNs set up
@@ -49,7 +49,7 @@ parser.add_argument("--gen_emb_dim", type=int, default=32)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=[128])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=10)
+parser.add_argument("--gen_epochs", type=int, default=50)
 parser.add_argument("--gen_batch_size", type=int, default=10000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=50)
@@ -109,8 +109,12 @@ lat_mdn_epochs = args.lat_mdn_epochs
 
 key = random.PRNGKey(args.seed)
 key, k1, k2, k3, k4, k5, k_data = random.split(key, 7)
-L0 = random.normal(k1, (d,d))
-L1 = random.normal(k2, (d,d))
+
+L0 = jnp.sqrt(0.1) * jnp.eye(d)
+L1 = jnp.sqrt(0.1) * jnp.eye(d)
+
+# L0 = random.normal(k1, (d,d))
+# L1 = random.normal(k2, (d,d))
 
 prior_mean = jnp.zeros((d,1))
 
