@@ -55,12 +55,10 @@ def train_step(state: train_state.TrainState,
     def loss_fn(params):
 
         # expand, we want all samples z to interact with each sample in x
-        z_ = z[None, :, : ] # (1, z_batch, z_dim)
-        x_ = x[:, None, :] # (batch, 1, x_dim)
-        tmp = z_ + x_
-        tmp = jnp.zeros_like(tmp)
-        z_ += tmp # (batch, z_batch, y_dim)
-        x_ += tmp # (batch, z_batch, y_dim)
+        B, x_dim = x.shape
+        K, z_dim = z.shape
+        z_ = jnp.broadcast_to(z[None, :, :], (B, K, z_dim))
+        x_ = jnp.broadcast_to(x[:, None, :], (B, K, x_dim))
         y = state.apply_fn(params, z_, x_) # (batch, z_batch, y_dim)
 
         v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)

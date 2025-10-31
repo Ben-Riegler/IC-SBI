@@ -2,6 +2,7 @@
 import jax
 import jax.numpy as jnp
 from jax import random
+from jax.scipy.stats import norm
 
 jax.config.update("jax_enable_x64", True)
 
@@ -53,6 +54,33 @@ def mvn_posterior(x, prior_mean, prior_L, model_L):
     post_var = LL0 - jnp.linalg.matmul(B, Covθx) # (d, d)
 
     return post_mean.T, post_var
+
+
+
+def get_true_cdf(theta, # (batch, d)
+                 post_mean, # (batch, d)
+                 post_var # (d, d)
+                 ):
+
+    z = (theta - post_mean) / jnp.sqrt(jnp.diag(post_var))[None, :]
+    u = norm.cdf(z)
+
+    return u
+
+
+def get_true_quantiles(u, # (test_batch, batch, d)
+                       x, # (test_batch, x_dim)
+                       prior_mean, prior_L, model_L
+                       ):
+    
+    post_means, post_var = mvn_posterior(x, prior_mean, prior_L, model_L) # (test_batch, d), (d, d)
+
+    post_std = jnp.sqrt(jnp.diag(post_var))[None, :][None, ...] # (1, 1, d)
+
+    t = post_means[:, None] + post_std * norm.ppf(u) 
+
+    return t # (test_batch, batch, d)
+
 
 def gen_two_moons_data(key, n_samples, prior_low, prior_high):
     k_theta, k_a, k_r = random.split(key, 3)

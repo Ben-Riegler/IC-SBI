@@ -9,7 +9,7 @@ import numpy as np
 
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
-from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal
+from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal, get_true_cdf, get_true_quantiles
 from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists, plot_marginals_and_mdn
 from utils import save_gen
 from mdn_inv import mdn_inv_marg
@@ -25,7 +25,7 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "0"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="normal_test13/")
+parser.add_argument('--folder', type=str, default="normal_test15/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="No comment")
 
@@ -37,24 +37,25 @@ parser.add_argument('--N', type=int, default=10000)
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
 
 # post MDNs
+parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
 parser.add_argument('--post_mdn_K', type=int, default=3)
 parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=3 * [8])
-parser.add_argument('--post_mdn_epochs', type=int, default=20)
+parser.add_argument('--post_mdn_epochs', type=int, default=200)
 parser.add_argument('--post_mdn_batch_size', type=int, default=5000)
 
 
 # generator architecture
-parser.add_argument("--gen_emb_dim", type=int, default=16)
-parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=5 * [32])
+parser.add_argument("--gen_emb_dim", type=int, default=32)
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=[128])
 
 # generator training
 parser.add_argument("--gen_epochs", type=int, default=10)
-parser.add_argument("--gen_batch_size", type=int, default=5000)
+parser.add_argument("--gen_batch_size", type=int, default=10000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument("--gen_z_batch_size", type=int, default=100)
+parser.add_argument("--gen_z_batch_size", type=int, default=50)
 
 # fit lat MDNs
-parser.add_argument("--lat_use_ecdf", type=str2bool, default="True")
+parser.add_argument("--lat_learn_cdf", type=str2bool, default="False")
 parser.add_argument("--lat_mdn_N_fit", type=int, default=30000)
 parser.add_argument('--lat_mdn_K', type=int, default=3)
 parser.add_argument('--lat_mdn_hidden',  nargs='+', type=int, default=3 * [8])
@@ -62,7 +63,7 @@ parser.add_argument('--lat_mdn_epochs', type=int, default=200)
 parser.add_argument('--lat_mdn_batch_size', type=int, default=10000)
 
 # test
-parser.add_argument("--N_test", type=int, default=20000)
+parser.add_argument("--N_test", type=int, default=5000)
 
 args = parser.parse_args()
 
@@ -83,15 +84,13 @@ with open(os.path.join(path, "config.txt"), "w", encoding="utf-8") as f:
 d = args.d
 N = args.N
 
-lat_use_ecdf = args.lat_use_ecdf
-
+post_learn_cdf = args.post_learn_cdf
 post_mdn_K = args.post_mdn_K
 post_mdn_hidden = args.post_mdn_hidden
 post_mdn_batch_size = args.post_mdn_batch_size
 post_mdn_epochs = args.post_mdn_epochs
 
 mdn_lr = args.mdn_lr
-
 
 gen_emb_dim = args.gen_emb_dim
 gen_hidden_dims = args.gen_hidden_dims
@@ -101,7 +100,7 @@ gen_z_batch_size = args.gen_z_batch_size
 gen_lr = args.gen_lr
 Nz = gen_z_batch_size * N // gen_batch_size
 
-lat_use_ecdf = args.lat_use_ecdf
+lat_learn_cdf = args.lat_learn_cdf
 lat_mdn_N_fit = args.lat_mdn_N_fit
 lat_mdn_hidden = args.lat_mdn_hidden
 lat_mdn_K = args.lat_mdn_K
@@ -109,7 +108,7 @@ lat_mdn_batch_size = args.lat_mdn_batch_size
 lat_mdn_epochs = args.lat_mdn_epochs
 
 key = random.PRNGKey(args.seed)
-key, k1, k2, k3, k4, k5 = random.split(key, 6)
+key, k1, k2, k3, k4, k5, k_data = random.split(key, 7)
 L0 = random.normal(k1, (d,d))
 L1 = random.normal(k2, (d,d))
 
@@ -136,7 +135,7 @@ np.savez_compressed(
 z = random.normal(k4, (Nz, d))
 
 print("\n----------Generating data----------\n")
-x_data, θ_data = gen_mv_normal_normal_data(k1, 
+x_data, θ_data = gen_mv_normal_normal_data(k_data, 
                                             n_samples=N, 
                                             prior_mean=prior_mean,
                                             prior_L=L0, 
@@ -149,27 +148,34 @@ print("x: ", x_data.shape,
       "post means: ", post_mean.shape, 
       "post var", post_var.shape)
 
-post_mdn = MDN(hidden_dims = post_mdn_hidden,
-          K = post_mdn_K)
 
-print("\n----------Train posterior MDNs----------\n")
-losses_list, post_par_list = train_marginal_mdns(k2, 
-                                            model=post_mdn, x_data=x_data, θ_data=θ_data, 
-                                            lr=mdn_lr, n_epochs=post_mdn_epochs, batch_size=post_mdn_batch_size, 
-                                            path=path+"post_mdn/")
-plot_losses(losses_list, path+"post_mdn/")
+if post_learn_cdf:
+    print("\n----------Train posterior MDNs----------\n")
 
-test_ids = random.choice(k3, N, (4,))
-x_test = x_data[test_ids]
-plot_mvn_marginals(post_mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
+    post_mdn = MDN(hidden_dims = post_mdn_hidden,
+            K = post_mdn_K)
+
+    losses_list, post_par_list = train_marginal_mdns(k2, 
+                                                model=post_mdn, x_data=x_data, θ_data=θ_data, 
+                                                lr=mdn_lr, n_epochs=post_mdn_epochs, batch_size=post_mdn_batch_size, 
+                                                path=path+"post_mdn/")
+    plot_losses(losses_list, path+"post_mdn/")
+
+    test_ids = random.choice(k3, N, (4,))
+    x_test = x_data[test_ids]
+    plot_mvn_marginals(post_mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
+
+    u = get_cdf_vals(model=post_mdn, par_list=post_par_list, 
+                    x_data=x_data,θ_data=θ_data)
+    
+else:
+    u = get_true_cdf(theta=θ_data, post_mean=post_mean, post_var=post_var)
 
 
-u = get_cdf_vals(model=post_mdn, par_list=post_par_list, 
-                 x_data=x_data,θ_data=θ_data)
+print("\n----------Train generator----------\n")
 
 gen = generator(emb_dim=gen_emb_dim, hidden_dims=gen_hidden_dims, out_dim=d)
 
-print("\n----------Train generator----------\n")
 gen_state, losses = train_generator(k5,
                                 model=gen,
                                 u=u, x=x_data, z=z, 
@@ -180,7 +186,7 @@ save_gen(path, gen_state.params)
 
 plot_loss(losses, path+"gen/")
 
-if not lat_use_ecdf:
+if lat_learn_cdf:
     print("\n----------Train latents MDNs----------\n")
 
     # fit MDNs to marginals F(y_j|x) for learned p(y|x)
@@ -230,23 +236,33 @@ plot_post_pairs(
 )
 
 # map into learned copula space
-if lat_use_ecdf:
-    print("Using ECDF to map into learned copula space")
-    v = marg_ecdf_vals(y_samples)
-else:
+if lat_learn_cdf:
     print("Using learned MDNs to map into learned copula space")
     v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
     plot_marginals_and_mdn(model=lat_mdn, params=y_par_list, x_vals=x_test, sample=y_samples, x_lab=rf"$y_j$",
                     path= path + "y_mdn/")
+   
+else:
+    print("Using ECDF to map into learned copula space")
+    v = marg_ecdf_vals(y_samples)
+    
 # should be uniform if MDNs learned correctly
 plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf")
 
 # map into parameter space
-theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
+
+if post_learn_cdf:
+    print("Using learned marginal posteriors to map into parameter space")
+    theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
+else:
+    print("Using true quantile function to map into parameter space")
+    theta = get_true_quantiles(u=v, x = x_test, prior_mean=prior_mean, prior_L=L0, model_L=L1)
 
 # Ground truth posterior at x_test
 mu_gt  = post_mean[test_ids]        
 cov_gt = jnp.repeat(post_var[None, ...], axis=0, repeats=test_locs)                   # (test_locs, d, d)
+
+
 
 plot_post_pairs(
     theta=theta,
