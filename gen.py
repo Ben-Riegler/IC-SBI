@@ -12,7 +12,7 @@ import itertools
 
 from ecdf import sig_marg_ecdf_vals
 from plots import plot_loss
-from utils import save_gen
+from utils import save_gen, standardize
 
 jax.config.update("jax_enable_x64", False)
 jax.config.update("jax_debug_nans", False)
@@ -21,13 +21,17 @@ class generator(nn.Module):
     emb_dim: int
     hidden_dims: List
     out_dim: int
+    x_mean: jnp.ndarray | None = None
+    x_std: jnp.ndarray | None = None
 
     @nn.compact
     def __call__(self, z: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray: 
 
         # batch dims need to be same (see `train_generator`)
         # z: (..., z_dim)
-        # x: (..., x_dim)   
+        # x: (..., x_dim)  
+
+        x = x if self.x_mean is None else standardize(self.x_mean, self.x_std)(x)
 
         h_z = nn.Dense(self.emb_dim)(z) # (..., emb_dim)
         h_x = nn.Dense(self.emb_dim)(x) # (..., emb_dim)
@@ -230,7 +234,10 @@ if __name__ == "__main__":
 
     model = generator(emb_dim=32, 
                       hidden_dims=[128], 
-                      out_dim=d)
+                      out_dim=d,
+                      x_mean=x.mean(axis=0), 
+                      x_std=x.std(axis=0)
+                      )
 
     state, losses, val_losses = train_generator(keys, 
                                                 model, 

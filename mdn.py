@@ -15,26 +15,39 @@ jax.config.update("jax_enable_x64", True)
 
 from data import gen_mv_normal_normal_data, mvn_posterior
 from plots import plot_mvn_marginals, plot_losses
-from utils import save_MDN
+from utils import save_MDN, standardize
 
 # -- model definition --------------------------------------------------------
 
 class MDN(nn.Module):
     hidden_dims: List[int]
     K: int
+    mean: jnp.ndarray | None = None
+    std: jnp.ndarray | None = None
 
     @nn.compact
     def __call__(self, x: jnp.ndarray
                 ) -> Tuple[jnp.ndarray,jnp.ndarray,jnp.ndarray]:
-        h = x # (batch, x_dim)
+        
+        h = x if self.mean is None else standardize(self.mean, self.std)(x) 
+
         for dim in self.hidden_dims[:-1]:
             h = nn.Dense(dim)(h)
             h = nn.relu(h)
         h = nn.Dense(self.hidden_dims[-1])(h)
 
+        init_small_w = nn.initializers.normal(stddev=1e-3)
+        init_zero_b = nn.initializers.constant(0.)
+
         logits    = nn.Dense(self.K)(h)   # (batch,K)
-        means     = nn.Dense(self.K)(h)
-        log_scales= nn.Dense(self.K)(h)   
+        means     = nn.Dense(self.K,
+                             kernel_init=init_small_w, 
+                             bias_init=init_zero_b
+                             )(h)
+        log_scales= nn.Dense(self.K, 
+                             kernel_init=init_small_w, 
+                             bias_init=init_zero_b
+                             )(h)   
 
         return logits, means, log_scales
 
@@ -49,15 +62,15 @@ def train_step(state: train_state.TrainState,
 
     def loss_fn(params):
         logits, means, log_scales = state.apply_fn(params, x)
-        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True) # (batch,K)
-        scales = jnp.exp(log_scales) # (batch,K)
+        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True) # (batch, K)
+        scales = jnp.exp(log_scales) # (batch, K)
 
         log_probs = (
             -0.5 * ((y - means)/scales)**2
             - log_scales
             - 0.5 * jnp.log(2*jnp.pi)
         ) # (batch, K)
-        log_lik = jax.nn.logsumexp(log_pi + log_probs, axis=-1) # (batch,K)
+        log_lik = jax.nn.logsumexp(log_pi + log_probs, axis=-1) # (batch, K)
         return -jnp.mean(log_lik)
 
 
@@ -203,7 +216,7 @@ if __name__ == "__main__":
     path = "mdn/"
     os.makedirs(path, exist_ok=True)
 
-    d = 10
+    d = 5
     K = 1   
     N = 1000
     N_val = 5000
@@ -213,11 +226,11 @@ if __name__ == "__main__":
 
     root_key = random.key(42)
     keys = map(partial(random.fold_in, root_key), itertools.count())
-    # L0 = random.normal(next(keys), (d,d))
-    # L1 = random.normal(next(keys), (d,d))
+    L0 = random.normal(next(keys), (d,d))
+    L1 = random.normal(next(keys), (d,d))
 
-    L0 = jnp.sqrt(0.1) * jnp.eye(d)
-    L1 = jnp.sqrt(0.1) * jnp.eye(d)
+    # L0 = jnp.sqrt(0.1) * jnp.eye(d)
+    # L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
     prior_mean = jnp.zeros((d,1))
 
@@ -237,10 +250,12 @@ if __name__ == "__main__":
 
     print(x_data.shape, θ_data.shape, post_mean.shape, post_var.shape)
 
-    model = MDN(hidden_dims= 2 * [4], 
-                K=K)
+    model = MDN(hidden_dims= 2 * [32], 
+                K=K, 
+                mean=x_data.mean(axis=0), 
+                std=x_data.std(axis=0))
 
-    losses_list, par_list, val_losses_list = train_marginal_mdns(keys, model, x_data, θ_data, 1e-2, epochs, batch_size, "mdn/", 
+    losses_list, par_list, val_losses_list = train_marginal_mdns(keys, model, x_data, θ_data, 1e-4, epochs, batch_size, "mdn/", 
                                                 x_val=x_val, theta_val=theta_val, early_stop=early_stop)
 
     plot_losses(losses_list, path, val_losses_list)

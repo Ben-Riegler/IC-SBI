@@ -3,6 +3,24 @@ import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
 import jax
+import flax.linen as nn
+
+class standardize(nn.Module):
+    mean: jnp.ndarray # (1, d)
+    std: jnp.ndarray # (1, d)
+
+    @nn.compact
+    def __call__(self, 
+                 x: jnp.ndarray # (N, d)
+                 ):
+        
+        d = x.shape[-1]
+        assert d == self.mean.shape[-1]
+        assert d == self.std.shape[-1]
+
+        return (x - self.mean) / ( self.std)
+
+
 
 def str2bool(flag):
     if flag =="True":
