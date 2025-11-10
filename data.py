@@ -183,3 +183,4 @@ def sample_two_moons_posterior(key, x, n_samples, prior_low, prior_high):
 
     theta_all = jnp.concatenate(collected, axis=0)[:n_samples]
     return theta_all
+
