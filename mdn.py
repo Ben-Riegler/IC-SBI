@@ -226,11 +226,11 @@ if __name__ == "__main__":
 
     root_key = random.key(42)
     keys = map(partial(random.fold_in, root_key), itertools.count())
-    L0 = random.normal(next(keys), (d,d))
-    L1 = random.normal(next(keys), (d,d))
+    # L0 = random.normal(next(keys), (d,d))
+    # L1 = random.normal(next(keys), (d,d))
 
-    # L0 = jnp.sqrt(0.1) * jnp.eye(d)
-    # L1 = jnp.sqrt(0.1) * jnp.eye(d)
+    L0 = jnp.sqrt(0.1) * jnp.eye(d)
+    L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
     prior_mean = jnp.zeros((d,1))
 

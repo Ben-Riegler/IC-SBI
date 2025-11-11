@@ -52,12 +52,17 @@ def marg_ecdf_vals(y):
 
 if __name__ == "__main__":
     
-    key = random.PRNGKey(1)
-    n = 5000
+    key = random.PRNGKey(2)
+    n = 1000
     y = random.normal(key, (1, n, 2))
 
     t0 = time.perf_counter()
-    ecdf = sig_marg_ecdf_vals(y, alpha=10)
+    for a in jnp.linspace(0.1, 100.1, 10):
+        ecdf = sig_marg_ecdf_vals(y, alpha=a)
+        plt.scatter(y[0,:, 0], ecdf[0,:, 0], s=1, label=f"{a}")
+        plt.scatter(y[0,:, 0], norm.cdf(y[0,:, 0]), s=1)
+        plt.legend()
+        plt.show()
 
     ecdf2 = marg_ecdf_vals(y)
 
@@ -66,12 +71,12 @@ if __name__ == "__main__":
     t1 = time.perf_counter()
     print(f"{(t1-t0):.2f}")
 
-    plt.scatter(y[0,:, 0], ecdf[0,:, 0], s=1)
-    plt.scatter(y[0,:, 0], norm.cdf(y[0,:, 0]), s=1)
+    
+    # plt.scatter(y[0,:, 0], norm.cdf(y[0,:, 0]), s=1)
 
 
 
-    plt.show()
+    
     plt.hist(ecdf[0,:, 0])
     plt.show()
     

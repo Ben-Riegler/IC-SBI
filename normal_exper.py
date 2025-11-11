@@ -28,13 +28,13 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "0"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="normal_test41/")
+parser.add_argument('--folder', type=str, default="normal_test45/")
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--comment", type=str, default="No comment")
 
 # data
 parser.add_argument('--d', type=int, default=10)
-parser.add_argument('--N', type=int, default=100000)
+parser.add_argument('--N', type=int, default=1000)
 parser.add_argument('--N_val', type=int, default=1000)
 
 # MDNs set up
@@ -42,10 +42,10 @@ parser.add_argument('--mdn_lr', type=float, default=1e-3)
 
 # post MDNs
 parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
-parser.add_argument('--post_mdn_K', type=int, default=2)
-parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=2 * [8])
+parser.add_argument('--post_mdn_K', type=int, default=1)
+parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=2 * [16])
 parser.add_argument('--post_mdn_epochs', type=int, default=5000)
-parser.add_argument('--post_mdn_batch_size', type=int, default=10000)
+parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
 parser.add_argument("--post_early_stop", type=int, default=100)
 
 # generator architecture
@@ -54,7 +54,7 @@ parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=[128])
 
 # generator training
 parser.add_argument("--gen_epochs", type=int, default=400)
-parser.add_argument("--gen_batch_size", type=int, default=10000)
+parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=50)
 parser.add_argument("--gen_early_stop", type=int, default=100)
@@ -178,7 +178,8 @@ if post_learn_cdf:
 
     post_mdn = MDN(hidden_dims = post_mdn_hidden,
             K = post_mdn_K,
-            mean=x_mean, std=x_std)
+            mean=x_mean, std=x_std
+            )
 
     losses_list, post_par_list, val_losses_list = train_marginal_mdns(keys, 
                                                 model=post_mdn, x_data=x_data, θ_data=θ_data, 
@@ -204,7 +205,8 @@ else:
 print("\n----------Train generator----------\n")
 
 gen = generator(emb_dim=gen_emb_dim, hidden_dims=gen_hidden_dims, out_dim=d,
-                x_mean=x_mean, x_std=x_std)
+                x_mean=x_mean, x_std=x_std
+                )
 
 gen_keys = map(partial(random.fold_in, next(keys)), itertools.count())
 
