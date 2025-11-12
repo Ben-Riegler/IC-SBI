@@ -17,6 +17,8 @@ from utils import save_gen, standardize
 jax.config.update("jax_enable_x64", False)
 jax.config.update("jax_debug_nans", False)
 
+# this generator will have analytical marginal CDFs
+
 class generator(nn.Module):
     emb_dim: int
     hidden_dims: List
