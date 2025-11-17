@@ -68,7 +68,7 @@ parser.add_argument('--lat_mdn_epochs', type=int, default=200)
 parser.add_argument('--lat_mdn_batch_size', type=int, default=10000)
 
 # test
-parser.add_argument("--N_test", type=int, default=1000)
+parser.add_argument("--N_test", type=int, default=5000)
 
 args = parser.parse_args()
 
@@ -274,8 +274,7 @@ if lat_learn_cdf:
     print("Using learned MDNs to map into learned copula space")
     v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_test_exp, θ_data=y_samples) # (test_locs, N_test, d)
     plot_marginals_and_mdn(model=lat_mdn, params=y_par_list, x_vals=x_test, sample=y_samples, x_lab=rf"$y_j$",
-                    path= path + "y_mdn/")
-   
+                    path= path + "y_mdn/")  
 else:
     print("Using ECDF to map into learned copula space")
     v = marg_ecdf_vals(y_samples)
