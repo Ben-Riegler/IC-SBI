@@ -20,6 +20,9 @@ jax.config.update("jax_debug_nans", False)
 # this generator will have analytical marginal CDFs
 
 class generator(nn.Module):
+
+    # given noise z and observation x, returns GMM params for earch parameter component
+    
     emb_dim: int
     hidden_dims: List
     out_dim: int
