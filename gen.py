@@ -52,28 +52,29 @@ class generator(nn.Module):
 def train_step(state: train_state.TrainState,
                u: jnp.ndarray, # (batch, y_dim)
                x: jnp.ndarray, # (batch, x_dim)
-               z: jnp.ndarray, # (z_batch, z_dim)
+               z: jnp.ndarray, # (K, z_dim)
               ) -> Tuple[train_state.TrainState, jnp.ndarray]:
     
-    K = z.shape[0]
-    i_idx, j_idx = jnp.triu_indices(K, k=1) # upper triangular indices 
+    B, x_dim = x.shape
+    K, z_dim = z.shape
+    _K = min(10, K)
+    i_idx, j_idx = jnp.triu_indices(_K, k=1) # upper triangular indices 
 
     def loss_fn(params):
 
         # expand, we want all samples z to interact with each sample in x
-        B, x_dim = x.shape
-        K, z_dim = z.shape
+        
         z_ = jnp.broadcast_to(z[None, :, :], (B, K, z_dim))
         x_ = jnp.broadcast_to(x[:, None, :], (B, K, x_dim))
-        y = state.apply_fn(params, z_, x_) # (batch, z_batch, y_dim)
+        y = state.apply_fn(params, z_, x_) # (batch, K, y_dim)
 
-        v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
+        v = sig_marg_ecdf_vals(y)[:, :_K, :] # (batch, _K, y_dim)
 
         u_ = u[:, None, :] # (batch, 1, y_dim)
-        uv = jnp.linalg.vector_norm(u_-v, axis=-1) # (batch, z_batch)
+        uv = jnp.linalg.vector_norm(u_-v, axis=-1) # (batch, _K)
 
-        dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (K^2-K)/2, y_dim)
-        vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (K^2-K)/2)
+        dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (_K^2-_K)/2, y_dim)
+        vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (_K^2-_K)/2 )
   
         uv_m = jnp.mean(uv, axis=-1) # (batch)
         vv_m = jnp.mean(vv, axis=-1) # (batch)
@@ -97,23 +98,23 @@ def val_loss_fn(state: train_state.TrainState,
                 z: jnp.ndarray, # (z_batch, z_dim)
                 ):
     
-    K = z.shape[0]
-    i_idx, j_idx = jnp.triu_indices(K, k=1) # upper triangular indices 
-
-    # expand, we want all samples z to interact with each sample in x
     B, x_dim = x.shape
     K, z_dim = z.shape
+    _K = min(10, K)
+    i_idx, j_idx = jnp.triu_indices(_K, k=1) # upper triangular indices 
+
+    # expand, we want all samples z to interact with each sample in x
     z_ = jnp.broadcast_to(z[None, :, :], (B, K, z_dim))
     x_ = jnp.broadcast_to(x[:, None, :], (B, K, x_dim))
     y = state.apply_fn(state.params, z_, x_) # (batch, z_batch, y_dim)
 
-    v = sig_marg_ecdf_vals(y) # (batch, z_batch, y_dim)
+    v = sig_marg_ecdf_vals(y)[:, :_K, :] # (batch, _K, y_dim) # (batch, z_batch, y_dim)
 
     u_ = u[:, None, :] # (batch, 1, y_dim)
     uv = jnp.linalg.vector_norm(u_-v, axis=-1) # (batch, z_batch)
 
-    dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (K^2-K)/2, y_dim)
-    vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (K^2-K)/2)
+    dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (_K^2-_K)/2, y_dim)
+    vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (_K^2-_K)/2)
 
     uv_m = jnp.mean(uv, axis=-1) # (batch)
     vv_m = jnp.mean(vv, axis=-1) # (batch)
