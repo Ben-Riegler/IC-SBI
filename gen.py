@@ -210,6 +210,7 @@ def train_generator(key: map,
     return (state, losses) if x_val is None else (state, losses, val_losses)
 
 
+
 if __name__ == "__main__":
 
     root_key = random.key(3)

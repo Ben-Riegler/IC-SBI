@@ -17,7 +17,7 @@ from utils import save_gen
 from mdn_inv import mdn_inv_marg
 from ecdf import sig_marg_ecdf_vals, marg_ecdf_vals
 from utils import str2bool
-from metrics import c2st
+from metrics import c2st, sbc
 
 import argparse
 
@@ -28,7 +28,7 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "0"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="normal_test45/")
+parser.add_argument('--folder', type=str, default="normal_test53/")
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--comment", type=str, default="No comment")
 
@@ -41,7 +41,7 @@ parser.add_argument('--N_val', type=int, default=1000)
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
 
 # post MDNs
-parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
+parser.add_argument("--post_learn_cdf", type=str2bool, default="False")
 parser.add_argument('--post_mdn_K', type=int, default=1)
 parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=2 * [16])
 parser.add_argument('--post_mdn_epochs', type=int, default=5000)
@@ -50,14 +50,14 @@ parser.add_argument("--post_early_stop", type=int, default=100)
 
 # generator architecture
 parser.add_argument("--gen_emb_dim", type=int, default=32)
-parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=[128])
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=2*[256])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=400)
+parser.add_argument("--gen_epochs", type=int, default=50)
 parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
 parser.add_argument("--gen_z_batch_size", type=int, default=50)
-parser.add_argument("--gen_early_stop", type=int, default=100)
+parser.add_argument("--gen_early_stop", type=int, default=50)
 
 # fit lat MDNs
 parser.add_argument("--lat_learn_cdf", type=str2bool, default="False")
@@ -178,7 +178,7 @@ if post_learn_cdf:
 
     post_mdn = MDN(hidden_dims = post_mdn_hidden,
             K = post_mdn_K,
-            mean=x_mean, std=x_std
+            # mean=x_mean, std=x_std
             )
 
     losses_list, post_par_list, val_losses_list = train_marginal_mdns(keys, 
@@ -205,7 +205,7 @@ else:
 print("\n----------Train generator----------\n")
 
 gen = generator(emb_dim=gen_emb_dim, hidden_dims=gen_hidden_dims, out_dim=d,
-                x_mean=x_mean, x_std=x_std
+                # x_mean=x_mean, x_std=x_std
                 )
 
 gen_keys = map(partial(random.fold_in, next(keys)), itertools.count())
@@ -229,8 +229,6 @@ if lat_learn_cdf:
     # fit MDNs to marginals F(y_j|x) for learned p(y|x)
     # sample p(y,x) = p(x)p(y|x)
     # x_data ~ p(x) or oracle DGP
-
- 
 
     z_samples = random.normal(next(keys), (lat_mdn_N_fit, d))
     x_samples = sample_x_marginal(next(keys), lat_mdn_N_fit, prior_mean, L0, L1)
@@ -303,8 +301,6 @@ plot_post_pairs(
     file_prefix="posterior_pairs",
 )
 
-
-
 # generate true posterior sample
 eps = random.normal(next(keys), (test_locs, d, N_test))
 
@@ -330,6 +326,38 @@ print(scores)
 
 with open(path + "metrics.txt", "w") as f:
     f.write(f"C2ST scores  {scores}")
+
+
+print("performing SBC")
+B = 10000
+n = 100
+
+x_samples, prior_samples = gen_mv_normal_normal_data(next(keys), 
+                                                     n_samples=B, 
+                                                     prior_mean=prior_mean, 
+                                                     prior_L=L0, model_L=L1 )
+x_samples_exp = jnp.repeat(x_samples[:, None, :], repeats = n, axis = 1 )
+
+z_samples = random.normal(next(keys), (B, n, d))
+y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples_exp)
+
+# map into learned copula space
+if lat_learn_cdf:
+    print("Using learned MDNs to map into learned copula space")
+    v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_samples_exp, θ_data=y_samples) # (test_locs, N_test, d)
+else:
+    print("Using ECDF to map into learned copula space")
+    v = marg_ecdf_vals(y_samples)
+
+# map into parameter space
+if post_learn_cdf:
+    print("Using learned marginal posteriors to map into parameter space")
+    theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_samples_exp, u=v) # (B, n, d)
+else:
+    print("Using true quantile function to map into parameter space")
+    theta = get_true_quantiles(u=v, x = x_samples, prior_mean=prior_mean, prior_L=L0, model_L=L1)
+
+sbc(prior_samples=prior_samples, post_samples=theta)
 
 print("done!")
 
