@@ -8,6 +8,7 @@ from jax import device_get
 import numpy as np
 from functools import partial
 import itertools
+import time
 
 from mdn import MDN, train_marginal_mdns, get_cdf_vals
 from gen import generator, train_generator
@@ -17,7 +18,7 @@ from utils import save_gen
 from mdn_inv import mdn_inv_marg
 from ecdf import sig_marg_ecdf_vals, marg_ecdf_vals
 from utils import str2bool
-from metrics import c2st, sbc
+from metrics import c2st, sbc, c2st_jax
 
 import argparse
 
@@ -321,43 +322,50 @@ print("\npairplots saved\n")
 
 print("Performing C2ST")
 
+t0 = time.perf_counter()
+scores = [round(float(c2st_jax(keys, theta[i], theta_true[i])), 2) for i in range(test_locs)]
+t1 = time.perf_counter()
+print(scores, f"{t1-t0:.2f}s")
+
+t0 = time.perf_counter()
 scores = [round(float(c2st(keys, theta[i], theta_true[i])[0]), 2) for i in range(test_locs)]
-print(scores)
+t1 = time.perf_counter()
+print(scores, f"{t1-t0:.2f}s")
 
 with open(path + "metrics.txt", "w") as f:
     f.write(f"C2ST scores  {scores}")
 
 
-print("performing SBC")
-B = 10000
-n = 100
+# print("performing SBC")
+# B = 10000
+# n = 100
 
-x_samples, prior_samples = gen_mv_normal_normal_data(next(keys), 
-                                                     n_samples=B, 
-                                                     prior_mean=prior_mean, 
-                                                     prior_L=L0, model_L=L1 )
-x_samples_exp = jnp.repeat(x_samples[:, None, :], repeats = n, axis = 1 )
+# x_samples, prior_samples = gen_mv_normal_normal_data(next(keys), 
+#                                                      n_samples=B, 
+#                                                      prior_mean=prior_mean, 
+#                                                      prior_L=L0, model_L=L1 )
+# x_samples_exp = jnp.repeat(x_samples[:, None, :], repeats = n, axis = 1 )
 
-z_samples = random.normal(next(keys), (B, n, d))
-y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples_exp)
+# z_samples = random.normal(next(keys), (B, n, d))
+# y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples_exp)
 
-# map into learned copula space
-if lat_learn_cdf:
-    print("Using learned MDNs to map into learned copula space")
-    v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_samples_exp, θ_data=y_samples) # (test_locs, N_test, d)
-else:
-    print("Using ECDF to map into learned copula space")
-    v = marg_ecdf_vals(y_samples)
+# # map into learned copula space
+# if lat_learn_cdf:
+#     print("Using learned MDNs to map into learned copula space")
+#     v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_samples_exp, θ_data=y_samples) # (test_locs, N_test, d)
+# else:
+#     print("Using ECDF to map into learned copula space")
+#     v = marg_ecdf_vals(y_samples)
 
-# map into parameter space
-if post_learn_cdf:
-    print("Using learned marginal posteriors to map into parameter space")
-    theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_samples_exp, u=v) # (B, n, d)
-else:
-    print("Using true quantile function to map into parameter space")
-    theta = get_true_quantiles(u=v, x = x_samples, prior_mean=prior_mean, prior_L=L0, model_L=L1)
+# # map into parameter space
+# if post_learn_cdf:
+#     print("Using learned marginal posteriors to map into parameter space")
+#     theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_samples_exp, u=v) # (B, n, d)
+# else:
+#     print("Using true quantile function to map into parameter space")
+#     theta = get_true_quantiles(u=v, x = x_samples, prior_mean=prior_mean, prior_L=L0, model_L=L1)
 
-sbc(prior_samples=prior_samples, post_samples=theta)
+# sbc(prior_samples=prior_samples, post_samples=theta)
 
 print("done!")
 

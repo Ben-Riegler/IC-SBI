@@ -57,34 +57,33 @@ def train_step(state: train_state.TrainState,
     
     B, x_dim = x.shape
     K, z_dim = z.shape
-    _K = min(10, K)
+    _K = min(200, K)
     i_idx, j_idx = jnp.triu_indices(_K, k=1) # upper triangular indices 
 
     def loss_fn(params):
 
         # expand, we want all samples z to interact with each sample in x
         
-        z_ = jnp.broadcast_to(z[None, :, :], (B, K, z_dim))
-        x_ = jnp.broadcast_to(x[:, None, :], (B, K, x_dim))
-        y = state.apply_fn(params, z_, x_) # (batch, K, y_dim)
+        z_ = jnp.broadcast_to(z[None, :, :], (B, K, z_dim)); # print("z_", z_.shape)
+        x_ = jnp.broadcast_to(x[:, None, :], (B, K, x_dim)); # print("x_", x_.shape)
+        y = state.apply_fn(params, z_, x_); # print("y", y.shape) # (batch, K, y_dim)
 
-        v = sig_marg_ecdf_vals(y)[:, :_K, :] # (batch, _K, y_dim)
+        v = sig_marg_ecdf_vals(y)[:, :_K, :]; # print("v", v.shape) # (batch, _K, y_dim)
 
-        u_ = u[:, None, :] # (batch, 1, y_dim)
-        uv = jnp.linalg.vector_norm(u_-v, axis=-1) # (batch, _K)
+        u_ = u[:, None, :]; # print("u_", u_.shape) # (batch, 1, y_dim)
+        uv = jnp.linalg.vector_norm(u_-v, axis=-1); # print("uv", uv.shape) # (batch, _K)
 
-        dv = v[:, i_idx, :] - v[:, j_idx, :] # (batch, (_K^2-_K)/2, y_dim)
-        vv = jnp.linalg.vector_norm(dv, axis=-1) # (batch, (_K^2-_K)/2 )
+        dv = v[:, i_idx, :] - v[:, j_idx, :]; # print("dv", dv.shape) # (batch, (_K^2-_K)/2, y_dim)
+        vv = jnp.linalg.vector_norm(dv, axis=-1); # print("vv", vv.shape) # (batch, (_K^2-_K)/2 )
   
-        uv_m = jnp.mean(uv, axis=-1) # (batch)
-        vv_m = jnp.mean(vv, axis=-1) # (batch)
+        uv_m = jnp.mean(uv, axis=-1); # print("uv_m", uv_m.shape) # (batch)
+        vv_m = jnp.mean(vv, axis=-1); # print("vv_m", vv_m.shape) # (batch)
 
-        diff = 2 * uv_m - vv_m # (batch)
+        diff = 2 * uv_m - vv_m; # print("diff", diff.shape) # (batch)
 
-        ed = jnp.mean(diff) # ()
+        ed = jnp.mean(diff); # print("ed", ed.shape) # ()
 
         return ed
-
 
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
     state = state.apply_gradients(grads=grads)
@@ -226,7 +225,7 @@ if __name__ == "__main__":
     early_stop = 1000000
 
     batch_size = 1000
-    z_batch_size = 20
+    z_batch_size = 800
     
     u = random.uniform(next(keys), (N, d))
     x = random.normal(next(keys), (N, d))

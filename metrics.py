@@ -8,11 +8,17 @@ import jax.random as random
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.neural_network import MLPClassifier
 
+from flax import linen as nn
+from flax.training import train_state
+import optax
+
 from scipy.stats import binom
 import matplotlib.pyplot as plt
 
 from functools import partial
 import itertools
+from typing import Tuple
+import time
 
 
 def sbc(prior_samples, # (B, theta_dim)
@@ -144,13 +150,180 @@ def c2st(
     return scores
 
 
-if __name__ == "__main__":
 
+class MLP_bin_clf(nn.Module):
+    hidden_dims: list
+
+    @nn.compact
+    def __call__(self, 
+                 x: jnp.ndarray # (B, d)
+                 ) -> jnp.ndarray:
+
+        h = x
+        for layer in self.hidden_dims:
+            h = nn.Dense(layer)(h)
+            h = nn.relu(h)
+
+        logits = nn.Dense(2)(h) # (B, 2)
+        p = nn.softmax(logits) # (B, 2)
+
+        return p 
+    
+
+def create_train_state(key,
+                       model: MLP_bin_clf,
+                       in_shape: Tuple[int, int],
+                       lr: float,
+                       ) -> train_state.TrainState:
+    
+    init_params = model.init(key, jnp.zeros(in_shape))
+
+    tx = optax.adam(lr)
+
+    return train_state.TrainState.create(
+        apply_fn=model.apply, 
+        params=init_params,
+        tx=tx
+        )
+
+@partial(jax.jit, donate_argnames="state")
+def train_step(state: train_state.TrainState,
+               X: jnp.ndarray, # (B, d)
+               Y: jnp.ndarray, # (B, )
+               ) -> train_state.TrainState:
+    
+    def loss_fn(params):
+
+        p = state.apply_fn(params, X) # (B, 2)
+
+        mask = jnp.column_stack((Y, 1-Y)) # (B, 2)
+
+        log_prob = jnp.mean(jnp.log(p) * mask) # ()
+
+        return - log_prob
+    
+    loss, grads = jax.value_and_grad(loss_fn)(state.params)
+
+    state = state.apply_gradients(grads=grads)
+
+    return state, loss
+
+def train_MPL_bin_clf(keys: map,
+                      model: MLP_bin_clf, 
+                      X: jnp.ndarray, # (N, d)
+                      Y: jnp.ndarray, # (N, )
+                      lr: int,
+                      batch_size: int,
+                      n_epochs: int):
+    
+    N, d = X.shape
+    state = create_train_state(next(keys), model, (batch_size, d), lr)
+    
+    n_batches = N // batch_size
+
+    losses = []
+    
+    for epoch in range(n_epochs):
+
+        idcs = jax.random.permutation(next(keys), N)
+
+        X = X[idcs]
+        Y = Y[idcs]
+
+        for b in range(n_batches):
+            x = X[b*batch_size :(b+1)*batch_size]
+            y = Y[b*batch_size : (b+1)*batch_size]
+
+            state, loss = train_step(state, x, y)
+            losses.append(loss)
+
+        # if epoch % 10 == 0:
+        #     print(f"epoch: {epoch}  train loss: {loss:.4f}")
+
+    return state, losses
+
+def train_and_score(keys: map,
+                    model: MLP_bin_clf, 
+                    X_tr: jnp.ndarray, 
+                    Y_tr: jnp.ndarray, 
+                    X_te: jnp.ndarray, 
+                    Y_te: jnp.ndarray, 
+                    lr: int,
+                    batch_size: int,
+                    n_epochs: int):
+    
+    state, losses = train_MPL_bin_clf(keys,
+                                        model,
+                                        X_tr,
+                                        Y_tr,
+                                        lr,
+                                        batch_size,
+                                        n_epochs)
+    
+    p = model.apply(state.params, X_te)
+
+    Y_pred = jnp.where(p[:, 0]>=0.5, jnp.ones_like(Y_te), jnp.zeros_like(Y_te))
+
+    n_te = Y_te.shape[0] 
+
+    acc_te = 1 - jnp.sum(jnp.abs(Y_pred - Y_te)) / n_te
+
+    return acc_te
+                
+
+def c2st_jax(keys: map,
+             X1: jnp.ndarray,
+             X2: jnp.ndarray,
+             lr: float = 1e-3,
+             n_epochs: int = 300,
+             folds: int = 5):
+    
+    
+    d = X1.shape[-1]
+    
+    model = MLP_bin_clf(hidden_dims=[10*d, 10*d])
+
+    X = jnp.concat([X1, X2], axis=0)
+    Y = jnp.concat([jnp.ones((X1.shape[0],)), jnp.zeros((X2.shape[0],))], axis=0)
+
+    N = X.shape[0]
+    idcs = jax.random.permutation(next(keys), N)
+
+    X = X[idcs]
+    Y = Y[idcs]
+
+    fold_size = N // folds
+
+    batch_size = (folds -1) * fold_size
+
+    test_acs = []
+
+    all_idcs = jnp.arange(N)
+
+    for f in range(folds):
+
+        X_te = X[f*fold_size : (f+1)*fold_size]
+        Y_te = Y[f*fold_size : (f+1)*fold_size]
+
+        tr_idcs = jnp.concat([all_idcs[:f*fold_size ], all_idcs[(f+1)*fold_size:]])
+        X_tr = X[tr_idcs]
+        Y_tr = Y[tr_idcs]
+
+        acc = train_and_score(keys, model, X_tr, Y_tr, X_te, Y_te, lr, batch_size, n_epochs)
+
+        test_acs.append(acc)
+
+    score = jnp.mean(jnp.array(test_acs))
+
+    return score
+
+
+if __name__ == "__main__":
 
     root_key = random.key(2)
     keys = map(partial(random.fold_in, root_key), itertools.count())
 
-    # N, d = int(1e3), 10
+    N, d = int(1e3), 10
 
     # X = random.normal(next(keys), (N, d))
     # # Y = random.gamma(next(keys), a = 1, shape = (N, d))
@@ -158,12 +331,20 @@ if __name__ == "__main__":
 
     # scores = c2st(keys, X, Y)
     # print(scores)
-    B, n, d = 10000, 100, 2
+    # B, n, d = 10000, 100, 2
 
-    # prior = -random.gamma(next(keys), 1, (B, d))
-    prior = random.normal(next(keys), (B, d))
-    post = random.normal(next(keys), (B, n, d))
+    # # prior = -random.gamma(next(keys), 1, (B, d))
+    # prior = random.normal(next(keys), (B, d))
+    # post = random.normal(next(keys), (B, n, d))
 
+    # sbc(prior_samples=prior, post_samples=post) # (B, d)
 
-    sbc(prior_samples=prior, post_samples=post) # (B, d)
+    X1 = 0.99*random.normal(next(keys), (N, d))
+    X2 = random.normal(next(keys), (N, d))
+
+    score = c2st_jax(keys, X1, X2)
+    print(score)
+
+    score = c2st(keys, X1, X2)
+    print(score)
 
