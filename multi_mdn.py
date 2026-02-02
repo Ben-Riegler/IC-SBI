@@ -7,7 +7,7 @@ from flax.training import train_state, checkpoints
 import optax
 import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
-import math
+from jax.scipy.stats import norm
 import matplotlib.pyplot as plt
 import time
 from data import gen_mv_normal_normal_data
@@ -16,34 +16,6 @@ from mdn import MDN
 from utils import save_multiMDN
 
 jax.config.update("jax_enable_x64", True)
-
-# def build_vmapped_mdn(d: int, hidden: List[int], K: int):
-#     """
-#     Returns a module that replicates MDN d times with independent parameters.
-#     Output shapes: (batch, d, K) for each head’s output.
-#     """
-#     # Vectorize MDN over a new axis of size d, duplicating params per axis element
-#     VMapped = nn.vmap(
-#         MDN,
-#         variable_axes={"params": 0},   # separate params per copy
-#         split_rngs={"params": True},   # different init per copy
-#         in_axes=None,                  # same x goes to every copy
-#         out_axes=1,                    # stack outputs dim axis (1)
-#         axis_size=d
-#     )
-
-#     class MultiMDN(nn.Module):
-#         hidden_dims: List[int]
-#         K: int
-
-#         @nn.compact
-#         def __call__(self, x: jnp.ndarray):
-#             # x (batch, d)
-#             logits, means, log_scales = VMapped(self.hidden_dims, self.K)(x) # (batch, d, K)
-#             return logits, means, log_scales
-
-#     return MultiMDN(hidden, K)
-
 
 class SharedEmbedMultiMDN(nn.Module):
     var_dim: int
@@ -54,7 +26,7 @@ class SharedEmbedMultiMDN(nn.Module):
         # vmaped dimension heads
         self.BatchDense = nn.vmap(nn.Dense,
                             in_axes=None, # all share input, no axis assignment here
-                            out_axes=1,
+                            out_axes=-2,
                             axis_size=self.var_dim,
                             variable_axes={"params": 0},
                             split_rngs={"params": True}
@@ -82,17 +54,17 @@ class SharedEmbedMultiMDN(nn.Module):
                             kernel_init=init_small_w, 
                             bias_init=init_zero_b
                             )(h)
-        log_scales = self.BatchDense(self.K, 
-                                kernel_init=init_small_w, 
-                                bias_init=init_zero_b
-                                )(h) 
+        # log_scales = self.BatchDense(self.K, 
+        #                         kernel_init=init_small_w, 
+        #                         bias_init=init_zero_b
+        #                         )(h) 
 
         # const variance inductive bias
-        # const = jnp.ones((h.shape[0], 1), dtype=h.dtype)   # (B, 1)
-        # log_scales = self.BatchDense(self.K,
-        #                             kernel_init=init_small_w,
-        #                             bias_init=init_zero_b
-        #                             )(const)               # (B, var_dim, K)
+        const = jnp.ones_like(h, dtype=h.dtype)   # (B, 1)
+        log_scales = self.BatchDense(self.K,
+                                    kernel_init=init_small_w,
+                                    bias_init=init_zero_b
+                                    )(const)               # (B, var_dim, K)
 
 
         return logits, means, log_scales
@@ -140,7 +112,8 @@ def create_train_state(rng: Any, model,
 
 
 def train_multi_mdn(rng, model, x_data, θ_data,
-              lr, n_epochs, batch_size):
+              lr, n_epochs, batch_size,
+              save_path):
     n, d = x_data.shape
     state = create_train_state(rng, model, lr, batch_size, d)
     losses = []
@@ -156,7 +129,26 @@ def train_multi_mdn(rng, model, x_data, θ_data,
         if ep % 10 == 0:
             print(f"Epoch {ep:03d}  loss={loss:.4f}")
     
+    save_multiMDN(path=save_path, params=state.params)
     return state, losses
+
+def get_multiMDN_cdf_vals(model, params, x_data, 
+                          θ_data # (B, var_dim)
+                          ):
+        
+
+        logits, means, log_scales = model.apply(params, x_data)  # (B, var_dim, K)
+        scales = jnp.exp(log_scales) 
+        log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)  # B, var_dim, K)
+        pi = jnp.exp(log_pi)                                           # (B, var_dim, K)
+
+        # Learned mixture CDF
+        comp_cdfs = norm.cdf((θ_data[..., None] - means) / scales)  # (B, var_dim, K)
+        u = jnp.sum(pi * comp_cdfs, axis=-1) # (B, var_dim)
+
+        return u
+
+
 
 # -- main -------------------------------------------------------------------
 
@@ -175,6 +167,9 @@ if __name__ == "__main__":
     key, k1, k2, k3 = random.split(key, 4)
     L0 = random.normal(k1, (d,d))
     L1 = random.normal(k2, (d,d))
+
+    # L0 = jnp.sqrt(0.1) * jnp.eye(d)
+    # L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
     prior_mean = jnp.zeros((d,1))
 

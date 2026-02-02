@@ -50,7 +50,8 @@ def mdn_params_for_x(model, params, x):
     """Apply MDN to x and return pi, mu, sigma. Shapes:
        x: (..., x_dim)  →  pi, mu, sigma: (..., K)
     """
-    logits, means, log_scales = model.apply(params, x)   # (..., K) each
+    
+    logits, means, log_scales = model.apply(params, x)  # (..., K) each
     log_pi = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)  # (..., K)
     pi = jnp.exp(log_pi)             # (..., K)
     sigma  = jnp.exp(log_scales)           
@@ -70,3 +71,17 @@ def mdn_inv_marg(model, par_list, x, u):
         yj = mixture_quantile_bisect(u[..., j], pi, mu, sigma)    # (...,)
         ys.append(yj)
     return jnp.stack(ys, axis=-1)                                  # (..., d)
+
+
+def multi_mdn_inv_marg(model, params, x, u):
+
+    """Invert MDN marginals for all dims.
+       x: (..., x_dim)
+       u: (..., d)  with u in (0,1)
+       params: MDN params 
+       returns y: (..., d)
+    """
+    pi, mu, sigma = mdn_params_for_x(model, params, x) # each (..., d, K)
+    y = jax.vmap(mixture_quantile_bisect, in_axes=(-1, -2, -2, -2), out_axes=-1)(u, pi, mu, sigma)
+
+    return y

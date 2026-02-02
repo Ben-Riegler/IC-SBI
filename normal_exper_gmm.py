@@ -10,12 +10,12 @@ from functools import partial
 import itertools
 import time
 
-from mdn import MDN, train_marginal_mdns, get_cdf_vals
+from multi_mdn import SharedEmbedMultiMDN, train_multi_mdn, get_multiMDN_cdf_vals
 from gen_gmm import GMM, train_GMM_generator, sample_GMM_gen, gmm_marg_cdf
-from data import gen_mv_normal_normal_data, mvn_posterior, sample_x_marginal, get_true_cdf, get_true_quantiles
-from plots import plot_loss, plot_losses, plot_mvn_marginals, plot_mdn_marginals, plot_post_pairs, plot_marginal_hists, plot_marginals_and_mdn
+from data import gen_mv_normal_normal_data, mvn_posterior, get_true_cdf, get_true_quantiles
+from plots import plot_loss, plot_losses, plot_multi_mvn_marginals, plot_post_pairs, plot_marginal_hists
 from utils import save_gen
-from mdn_inv import mdn_inv_marg
+from mdn_inv import multi_mdn_inv_marg
 
 from utils import str2bool
 from metrics import c2st, sbc, c2st_jax
@@ -35,17 +35,15 @@ parser.add_argument("--comment", type=str, default="No comment")
 
 # data
 parser.add_argument('--d', type=int, default=10)
-parser.add_argument('--N', type=int, default=1000)
+parser.add_argument('--N', type=int, default=10000)
 parser.add_argument('--N_val', type=int, default=1000)
 
 # MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
-
-# post MDNs
 parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
 parser.add_argument('--post_mdn_K', type=int, default=1)
-parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=2*[8])
-parser.add_argument('--post_mdn_epochs', type=int, default=5000)
+parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=1*[8])
+parser.add_argument('--post_mdn_epochs', type=int, default=10000)
 parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
 parser.add_argument("--post_early_stop", type=int, default=100)
 
@@ -105,7 +103,7 @@ root_key = random.PRNGKey(args.seed)
 keys = map(partial(random.fold_in, root_key), itertools.count()) 
 
 
-L0 = jnp.sqrt(0.1) * jnp.eye(d)
+L0 = jnp.eye(d)
 L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
 # L0 = random.normal(next(keys), (d,d))
@@ -160,26 +158,26 @@ print("x: ", x_data.shape,
 if post_learn_cdf:
     print("\n----------Train posterior MDNs----------\n")
 
-    post_mdn = MDN(hidden_dims = post_mdn_hidden,
-            K = post_mdn_K,
-            # mean=x_mean, std=x_std
-            )
+    post_mdn = SharedEmbedMultiMDN(var_dim=d, hidden_dims = post_mdn_hidden, K = post_mdn_K)
 
-    losses_list, post_par_list, val_losses_list = train_marginal_mdns(keys, 
+    post_pars_state, losses = train_multi_mdn(next(keys), 
                                                 model=post_mdn, x_data=x_data, θ_data=θ_data, 
                                                 lr=mdn_lr, n_epochs=post_mdn_epochs, batch_size=post_mdn_batch_size, 
-                                                path=path+"post_mdn/",
-                                                x_val=x_data_val, theta_val=θ_data_val, early_stop=post_early_stop)
-    plot_losses(losses_list, path+"post_mdn/", val_losses_list)
+                                                save_path=path+"post_mdn/",
+                                                # x_val=x_data_val, theta_val=θ_data_val, early_stop=post_early_stop
+                                                )
+    post_pars = post_pars_state.params
+
+    # plot_losses(losses_list, path+"post_mdn/", val_losses_list)
 
     test_ids = random.choice(next(keys), N, (4,))
     x_test = x_data_val[test_ids]
-    plot_mvn_marginals(post_mdn, post_par_list, x_test, prior_mean, L0, L1, theta_range=(-5, 5), path = path + "post_mdn/")
 
-    u = get_cdf_vals(model=post_mdn, par_list=post_par_list, 
-                    x_data=x_data, θ_data=θ_data)
-    u_val = get_cdf_vals(model=post_mdn, par_list=post_par_list, 
-                        x_data=x_data_val, θ_data=θ_data_val)
+    plot_multi_mvn_marginals(post_mdn, post_pars, x_test, prior_mean, L0, L1, theta_range=(-5, 5), save_path = path + "post_mdn/")
+    plot_loss(losses, path+"post_mdn/")
+
+    u = get_multiMDN_cdf_vals(model=post_mdn, params=post_pars, x_data=x_data, θ_data=θ_data)
+    u_val = get_multiMDN_cdf_vals(model=post_mdn, params=post_pars, x_data=x_data_val, θ_data=θ_data_val)
 
 else:
     u = get_true_cdf(theta=θ_data, post_mean=post_mean, post_var=post_var)
@@ -193,12 +191,12 @@ gen = GMM(hidden_dims=gen_hidden_dims, K = gen_K, d = d)
 gen_keys = map(partial(random.fold_in, next(keys)), itertools.count())
 
 gen_state, losses  = train_GMM_generator(gen_keys,
-                                                model=gen,
-                                                u=u, x=x_data,
-                                                learning_rate=gen_lr, 
-                                                n_epochs=gen_epochs, batch_size=gen_batch_size,
-                                                L_mc=gen_L_mc
-                                               )
+                                            model=gen,
+                                            u=u, x=x_data,
+                                            learning_rate=gen_lr, 
+                                            n_epochs=gen_epochs, batch_size=gen_batch_size,
+                                            L_mc=gen_L_mc
+                                            )
 
 save_gen(path, gen_state.params)
 
@@ -217,7 +215,7 @@ logits, means, chol_pars = gen.apply(gen_state.params, x_test)
 
 y_samples = sample_GMM_gen(next(keys), N_test, logits, means, chol_pars) # (test_locs, N_test, d)
 
-
+print("plot y marginal hists")
 plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
 
 plot_post_pairs(
@@ -231,14 +229,15 @@ plot_post_pairs(
 # map into learned copula space
 
 v = gmm_marg_cdf(y_samples, logits, means, chol_pars)
-    
+
+print("plot v marginal hists")
 # should be uniform if MDNs learned correctly
 plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf")
 
 # map into parameter space
 if post_learn_cdf:
     print("Using learned marginal posteriors to map into parameter space")
-    theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_test_exp, u=v) # (test_locs, N_test, d)
+    theta = multi_mdn_inv_marg(model = post_mdn, params=post_pars, x=x_test_exp, u=v) # (test_locs, N_test, d)
 else:
     print("Using true quantile function to map into parameter space")
     theta = get_true_quantiles(u=v, x = x_test, prior_mean=prior_mean, prior_L=L0, model_L=L1)
@@ -246,6 +245,8 @@ else:
 # Ground truth posterior at x_test
 mu_gt  = post_mean_val[test_ids] # (test_locs, d)  
 cov_gt = jnp.repeat(post_var_val[None, ...], axis=0, repeats=test_locs) # (test_locs, d, d)
+
+print("plot post pairs")
 
 plot_post_pairs(
     theta=theta,
