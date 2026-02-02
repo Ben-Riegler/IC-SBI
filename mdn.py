@@ -216,21 +216,21 @@ if __name__ == "__main__":
     path = "mdn/"
     os.makedirs(path, exist_ok=True)
 
-    d = 5
+    d = 10
     K = 1   
     N = 1000
     N_val = 5000
-    batch_size = 1000
+    batch_size = 5000
     epochs = 5000
-    early_stop = 100
+    early_stop = 100000
 
     root_key = random.key(42)
     keys = map(partial(random.fold_in, root_key), itertools.count())
-    # L0 = random.normal(next(keys), (d,d))
-    # L1 = random.normal(next(keys), (d,d))
+    L0 = random.normal(next(keys), (d,d))
+    L1 = random.normal(next(keys), (d,d))
 
-    L0 = jnp.sqrt(0.1) * jnp.eye(d)
-    L1 = jnp.sqrt(0.1) * jnp.eye(d)
+    # L0 = jnp.sqrt(0.1) * jnp.eye(d)
+    # L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
     prior_mean = jnp.zeros((d,1))
 

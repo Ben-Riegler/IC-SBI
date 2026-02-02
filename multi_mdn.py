@@ -17,32 +17,85 @@ from utils import save_multiMDN
 
 jax.config.update("jax_enable_x64", True)
 
-def build_vmapped_mdn(d: int, hidden: List[int], K: int):
-    """
-    Returns a module that replicates MDN d times with independent parameters.
-    Output shapes: (batch, d, K) for each head’s output.
-    """
-    # Vectorize MDN over a new axis of size d, duplicating params per axis element
-    VMapped = nn.vmap(
-        MDN,
-        variable_axes={"params": 0},   # separate params per copy
-        split_rngs={"params": True},   # different init per copy
-        in_axes=None,                  # same x goes to every copy
-        out_axes=1,                    # stack outputs dim axis (1)
-        axis_size=d
-    )
+# def build_vmapped_mdn(d: int, hidden: List[int], K: int):
+#     """
+#     Returns a module that replicates MDN d times with independent parameters.
+#     Output shapes: (batch, d, K) for each head’s output.
+#     """
+#     # Vectorize MDN over a new axis of size d, duplicating params per axis element
+#     VMapped = nn.vmap(
+#         MDN,
+#         variable_axes={"params": 0},   # separate params per copy
+#         split_rngs={"params": True},   # different init per copy
+#         in_axes=None,                  # same x goes to every copy
+#         out_axes=1,                    # stack outputs dim axis (1)
+#         axis_size=d
+#     )
 
-    class MultiMDN(nn.Module):
-        hidden_dims: List[int]
-        K: int
+#     class MultiMDN(nn.Module):
+#         hidden_dims: List[int]
+#         K: int
 
-        @nn.compact
-        def __call__(self, x: jnp.ndarray):
-            # x (batch, d)
-            logits, means, log_scales = VMapped(self.hidden_dims, self.K)(x) # (batch, d, K)
-            return logits, means, log_scales
+#         @nn.compact
+#         def __call__(self, x: jnp.ndarray):
+#             # x (batch, d)
+#             logits, means, log_scales = VMapped(self.hidden_dims, self.K)(x) # (batch, d, K)
+#             return logits, means, log_scales
 
-    return MultiMDN(hidden, K)
+#     return MultiMDN(hidden, K)
+
+
+class SharedEmbedMultiMDN(nn.Module):
+    var_dim: int
+    hidden_dims: List[int]
+    K: int
+
+    def setup(self):
+        # vmaped dimension heads
+        self.BatchDense = nn.vmap(nn.Dense,
+                            in_axes=None, # all share input, no axis assignment here
+                            out_axes=1,
+                            axis_size=self.var_dim,
+                            variable_axes={"params": 0},
+                            split_rngs={"params": True}
+                            )
+
+    @nn.compact
+    def __call__(self, 
+                 x: jnp.ndarray # (B, x_dim)
+                ) -> Tuple[jnp.ndarray,jnp.ndarray,jnp.ndarray]:
+        h = x 
+
+        # feature extactor shared across variable dims
+        for dim in self.hidden_dims[:-1]:
+            h = nn.Dense(dim)(h)
+            h = nn.relu(h)
+        h = nn.Dense(self.hidden_dims[-1])(h)
+
+        init_small_w = nn.initializers.normal(stddev=1e-3)
+        init_zero_b = nn.initializers.constant(0.)
+
+        # independent head for each variable dim
+
+        logits = self.BatchDense(self.K)(h) # (B, var_dim, K)
+        means = self.BatchDense(self.K,
+                            kernel_init=init_small_w, 
+                            bias_init=init_zero_b
+                            )(h)
+        log_scales = self.BatchDense(self.K, 
+                                kernel_init=init_small_w, 
+                                bias_init=init_zero_b
+                                )(h) 
+
+        # const variance inductive bias
+        # const = jnp.ones((h.shape[0], 1), dtype=h.dtype)   # (B, 1)
+        # log_scales = self.BatchDense(self.K,
+        #                             kernel_init=init_small_w,
+        #                             bias_init=init_zero_b
+        #                             )(const)               # (B, var_dim, K)
+
+
+        return logits, means, log_scales
 
 @jax.jit
 def train_step(state: train_state.TrainState,
@@ -86,7 +139,6 @@ def create_train_state(rng: Any, model,
     )
 
 
-
 def train_multi_mdn(rng, model, x_data, θ_data,
               lr, n_epochs, batch_size):
     n, d = x_data.shape
@@ -100,7 +152,7 @@ def train_multi_mdn(rng, model, x_data, θ_data,
             idx = perm[i:i+batch_size]
             xb, yb = x_data[idx], θ_data[idx]
             state, loss = train_step(state, xb, yb)
-            losses.append(loss.item())
+            losses.append(loss)
         if ep % 10 == 0:
             print(f"Epoch {ep:03d}  loss={loss:.4f}")
     
@@ -113,11 +165,11 @@ if __name__ == "__main__":
     path = "multi_mdn/"
     os.makedirs(path, exist_ok=True)
 
-    d = 4
-    K = 4
-    N = 5000
+    d = 10
+    K = 1
+    N = 1000
     batch_size = 5000
-    epochs = 50
+    epochs = 10000
 
     key = random.PRNGKey(1)
     key, k1, k2, k3 = random.split(key, 4)
@@ -141,9 +193,11 @@ if __name__ == "__main__":
 
     key, tkey = random.split(key)
 
-    model = build_vmapped_mdn(d = d, 
-                              hidden= 2 * [8],
-                              K = K)
+    # model = build_vmapped_mdn(d = d, 
+    #                           hidden= 2 * [8],
+    #                           K = K)
+
+    model = SharedEmbedMultiMDN(var_dim=d, hidden_dims = 1*[16], K = K)
 
     t0 = time.perf_counter()
     state, losses = train_multi_mdn(tkey, model,
