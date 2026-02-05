@@ -1,14 +1,15 @@
 gen/
 mdn/
+gmm_gen/
 multi_mdn/
 normal_exp/
 run_normal.sh
 run_moon.sh
 SLURM_GPU/
 experiments/
+experiments_old/
 normal_test/
 plots/
-plots.py
 play_moon.ipynb
 play_normal.ipynb
 notets.md
