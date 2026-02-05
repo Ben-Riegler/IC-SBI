@@ -177,14 +177,12 @@ def ED(u, # (batch, d)
 
 # jit and free up buffer of state since it will not be used anymore after this call 
 @partial(jax.jit, donate_argnames="state", static_argnames="L_mc")
-def train_step(key: random.PRNGKey,
+def train_step(eps_key: random.PRNGKey,
                state: train_state.TrainState,
                u: jnp.ndarray, # (batch, d)
                x: jnp.ndarray, # (batch, x_dim)
                L_mc: int,
               ) -> Tuple[train_state.TrainState, jnp.ndarray]:
-    
-    key, eps_key = random.split(key)
 
     def loss_fn(params):
 
@@ -217,6 +215,8 @@ def create_train_state(key: Any, model: GMM,
 
     params = model.init(key, jnp.zeros(x_shape)) # model is stateless, not affected by calling init
     tx     = optax.adam(learning_rate)
+    # tx = optax.sgd(learning_rate, momentum=0.9)
+
     return train_state.TrainState.create(
         apply_fn=model.apply,
         params=params,
@@ -242,7 +242,8 @@ def train_GMM_generator(keys: map,
 
     losses = []
 
-    state = create_train_state(next(keys), model, learning_rate, 
+    state = create_train_state(next(keys),
+                               model, learning_rate, 
                                (batch_size, x_dim)
                                )
     n_batches = N // batch_size
@@ -264,7 +265,8 @@ def train_GMM_generator(keys: map,
             #     val_loss = val_loss_fn(state=state, u = u_val, x = x_val, z = z_val)
             #     val_losses.append(val_loss)
 
-            state, loss = train_step(key=next(keys), state=state, u=u_batch, x=x_batch, L_mc=L_mc)
+            state, loss = train_step(eps_key=next(keys), # eps_key=next(keys),
+                                     state=state, u=u_batch, x=x_batch, L_mc=L_mc)
             losses.append(loss)
         
         # if len(val_losses) > early_stop and val_loss > max(val_losses[-early_stop:-1]):
@@ -305,7 +307,7 @@ if __name__ == "__main__":
     # u_val = random.uniform(next(keys), (N_val, d))
     # x_val = random.normal(next(keys), (N_val, d))
 
-    model = GMM(hidden_dims=[64], K=3, d=d)
+    model = GMM(hidden_dims=2*[8], K=2, d=d)
 
     state, losses = train_GMM_generator(keys, 
                                         model, 

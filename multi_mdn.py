@@ -54,17 +54,17 @@ class SharedEmbedMultiMDN(nn.Module):
                             kernel_init=init_small_w, 
                             bias_init=init_zero_b
                             )(h)
-        # log_scales = self.BatchDense(self.K, 
-        #                         kernel_init=init_small_w, 
-        #                         bias_init=init_zero_b
-        #                         )(h) 
+        log_scales = self.BatchDense(self.K, 
+                                kernel_init=init_small_w, 
+                                bias_init=init_zero_b
+                                )(h) 
 
         # const variance inductive bias
-        const = jnp.ones_like(h, dtype=h.dtype)   # (B, 1)
-        log_scales = self.BatchDense(self.K,
-                                    kernel_init=init_small_w,
-                                    bias_init=init_zero_b
-                                    )(const)               # (B, var_dim, K)
+        # const = jnp.ones_like(h, dtype=h.dtype)   # (B, 1)
+        # log_scales = self.BatchDense(self.K,
+        #                             kernel_init=init_small_w,
+        #                             bias_init=init_zero_b
+        #                             )(const)               # (B, var_dim, K)
 
 
         return logits, means, log_scales

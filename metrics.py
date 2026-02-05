@@ -23,6 +23,7 @@ import time
 
 def sbc(prior_samples, # (B, theta_dim)
         post_samples, # (B, n, theta_dim)
+        save_path = None
         ):
     
     B, n, d = post_samples.shape
@@ -46,7 +47,7 @@ def sbc(prior_samples, # (B, theta_dim)
     ud_u = u_u - u2
     ud_l = u_l - u2
 
-
+    plt.close("all")
     for dim in range(d):
        
         y2 = jnp.repeat(rank_ecdf[:, dim], 2, axis=0)[:-1]
@@ -59,14 +60,25 @@ def sbc(prior_samples, # (B, theta_dim)
         plt.plot(x2, y2, label="r_ecdf") 
 
         plt.legend()
-        plt.show()
+
+        if save_path is None:
+            plt.show()
+        else:
+            plt.savefig(save_path+f"r_ecdf_d={dim}.pdf")
+            plt.close()
 
         diff2 = y2-u2
 
         plt.fill_between(x2, ud_l, ud_u, color="grey", alpha=0.25)
         plt.plot(x2, diff2, label="ecdf deviation")
         plt.legend()
-        plt.show()
+
+        if save_path is None:
+            plt.show()
+        else:
+            plt.savefig(save_path+f"ecdf_dev_d={dim}.pdf")
+            plt.close()
+        
 
 
 

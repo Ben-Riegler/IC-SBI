@@ -29,21 +29,21 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="GMM_gen/normal_test1/")
-parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--comment", type=str, default="No comment")
+parser.add_argument('--folder', type=str, default="GMM_gen/normal_test3/")
+parser.add_argument("--seed", type=int, default=1)
+parser.add_argument("--comment", type=str, default="")
 
 # data
 parser.add_argument('--d', type=int, default=10)
-parser.add_argument('--N', type=int, default=10000)
+parser.add_argument('--N', type=int, default=1000)
 parser.add_argument('--N_val', type=int, default=1000)
 
 # MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
 parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
 parser.add_argument('--post_mdn_K', type=int, default=1)
-parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=1*[8])
-parser.add_argument('--post_mdn_epochs', type=int, default=10000)
+parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=1*[16])
+parser.add_argument('--post_mdn_epochs', type=int, default=1000)
 parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
 parser.add_argument("--post_early_stop", type=int, default=100)
 
@@ -52,10 +52,10 @@ parser.add_argument("--gen_K", type=int, default=1)
 parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=2*[8])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=50)
+parser.add_argument("--gen_epochs", type=int, default=100)
 parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument('--gen_L_mc', type=int, default=80)
+parser.add_argument('--gen_L_mc', type=int, default=400)
 parser.add_argument("--gen_early_stop", type=int, default=1000)
 
 # test
@@ -103,7 +103,7 @@ root_key = random.PRNGKey(args.seed)
 keys = map(partial(random.fold_in, root_key), itertools.count()) 
 
 
-L0 = jnp.eye(d)
+L0 = jnp.sqrt(0.1) * jnp.eye(d)
 L1 = jnp.sqrt(0.1) * jnp.eye(d)
 
 # L0 = random.normal(next(keys), (d,d))
@@ -209,6 +209,7 @@ N_test = args.N_test
 
 test_ids = random.choice(next(keys), N_val, (test_locs,))
 x_test = x_data_val[test_ids] # (test_locs, d)
+# expand to match shape of v later
 x_test_exp = jnp.repeat(x_test[:, None, :], axis=1, repeats=N_test)
 
 logits, means, chol_pars = gen.apply(gen_state.params, x_test)
@@ -275,52 +276,49 @@ plot_post_pairs(
 
 print("\npairplots saved\n")
 
-print("Performing C2ST")
+# print("Performing C2ST")
 
 t0 = time.perf_counter()
 scores = [round(float(c2st_jax(keys, theta[i], theta_true[i])), 2) for i in range(test_locs)]
 t1 = time.perf_counter()
 print(scores, f"{t1-t0:.2f}s")
 
-# t0 = time.perf_counter()
-# scores = [round(float(c2st(keys, theta[i], theta_true[i])[0]), 2) for i in range(test_locs)]
-# t1 = time.perf_counter()
-# print(scores, f"{t1-t0:.2f}s")
+# # t0 = time.perf_counter()
+# # scores = [round(float(c2st(keys, theta[i], theta_true[i])[0]), 2) for i in range(test_locs)]
+# # t1 = time.perf_counter()
+# # print(scores, f"{t1-t0:.2f}s")
 
 with open(path + "metrics.txt", "w") as f:
     f.write(f"C2ST scores  {scores}")
 
 
-# print("performing SBC")
-# B = 10000
-# n = 100
+print("performing SBC")
+B = 10000
+n = 100
 
-# x_samples, prior_samples = gen_mv_normal_normal_data(next(keys), 
-#                                                      n_samples=B, 
-#                                                      prior_mean=prior_mean, 
-#                                                      prior_L=L0, model_L=L1 )
-# x_samples_exp = jnp.repeat(x_samples[:, None, :], repeats = n, axis = 1 )
+x_samples, prior_samples = gen_mv_normal_normal_data(next(keys), 
+                                                     n_samples=B, 
+                                                     prior_mean=prior_mean, 
+                                                     prior_L=L0, model_L=L1 )
+x_samples_exp = jnp.repeat(x_samples[:, None, :], repeats = n, axis = 1 )
 
-# z_samples = random.normal(next(keys), (B, n, d))
-# y_samples = gen.apply(gen_state.params, z=z_samples, x=x_samples_exp)
+logits, means, chol_pars = gen.apply(gen_state.params, x_samples)
+y_samples = sample_GMM_gen(next(keys), n, logits, means, chol_pars) # (B, n, d)
 
-# # map into learned copula space
-# if lat_learn_cdf:
-#     print("Using learned MDNs to map into learned copula space")
-#     v = get_cdf_vals(model=lat_mdn, par_list=y_par_list, x_data=x_samples_exp, θ_data=y_samples) # (test_locs, N_test, d)
-# else:
-#     print("Using ECDF to map into learned copula space")
-#     v = marg_ecdf_vals(y_samples)
+# map into learned copula space
+v = gmm_marg_cdf(y_samples, logits, means, chol_pars)
 
-# # map into parameter space
-# if post_learn_cdf:
-#     print("Using learned marginal posteriors to map into parameter space")
-#     theta = mdn_inv_marg(model = post_mdn, par_list=post_par_list, x=x_samples_exp, u=v) # (B, n, d)
-# else:
-#     print("Using true quantile function to map into parameter space")
-#     theta = get_true_quantiles(u=v, x = x_samples, prior_mean=prior_mean, prior_L=L0, model_L=L1)
+# map into parameter space
+if post_learn_cdf:
+    print("Using learned marginal posteriors to map into parameter space")
+    theta = multi_mdn_inv_marg(model = post_mdn, params=post_pars, x=x_samples_exp, u=v) # (B, n, d)
+else:
+    print("Using true quantile function to map into parameter space")
+    theta = get_true_quantiles(u=v, x = x_samples, prior_mean=prior_mean, prior_L=L0, model_L=L1)
 
-# sbc(prior_samples=prior_samples, post_samples=theta)
+sbc_path = path + "sbc/"
+os.makedirs(sbc_path, exist_ok=True)
+sbc(prior_samples=prior_samples, post_samples=theta, save_path=sbc_path)
 
 print("done!")
 
