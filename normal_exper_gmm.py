@@ -29,7 +29,7 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="GMM_gen/normal_test3/")
+parser.add_argument('--folder', type=str, default="GMM_gen/normal_test4/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="")
 
@@ -55,7 +55,7 @@ parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=2*[8])
 parser.add_argument("--gen_epochs", type=int, default=100)
 parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument('--gen_L_mc', type=int, default=400)
+parser.add_argument('--gen_L_mc', type=int, default=20)
 parser.add_argument("--gen_early_stop", type=int, default=1000)
 
 # test

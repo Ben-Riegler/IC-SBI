@@ -105,7 +105,6 @@ def sample_GMM_gen(key, N,
 
     return y
 
-
 def gmm_marg_cdf_batch(y, # (batch, K, L_mc, d)
                  pis, # (batch, K)
                  means, # (batch, K, d)
@@ -146,7 +145,6 @@ def gmm_marg_cdf(y, # (batch, N, d)
     F = jnp.sum(pi_exp * Phi, axis=2)         #  (batch, N, d)
     return F
 
-
 def ED(u, # (batch, d)
        v, # (batch, K, L_mc, d)
        pis, # (batch, K)
@@ -173,7 +171,6 @@ def ED(u, # (batch, d)
     ed = jnp.mean(2*_A - _B)
 
     return ed # ()
-
 
 # jit and free up buffer of state since it will not be used anymore after this call 
 @partial(jax.jit, donate_argnames="state", static_argnames="L_mc")
@@ -205,7 +202,6 @@ def train_step(eps_key: random.PRNGKey,
 
     return state, loss
 
-
 def create_train_state(key: Any, model: GMM,
                        learning_rate: float,
                        x_shape: Tuple[int,int]
@@ -223,7 +219,6 @@ def create_train_state(key: Any, model: GMM,
         tx=tx
     )
 
-
 def train_GMM_generator(keys: map,
                     model: GMM,
                     u: jnp.ndarray,
@@ -238,7 +233,6 @@ def train_GMM_generator(keys: map,
                     ):
     
     N, x_dim = x.shape
-
 
     losses = []
 

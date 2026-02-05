@@ -163,7 +163,8 @@ def plot_multi_mvn_marginals(model,
                       prior_L: jnp.ndarray,
                       model_L: jnp.ndarray,
                       theta_range=(-10.0, 10.0),
-                      num_points=300):
+                      num_points=300,
+                      save_path=None):
     """
     Plot learned vs true marginal CDFs for each dimension and a set of x's.
 
@@ -239,7 +240,16 @@ def plot_multi_mvn_marginals(model,
                 ax.legend(loc="lower right", fontsize=8)
 
     fig.tight_layout()
-    return fig, axes
+
+    name = "fit.pdf"
+
+    if save_path is None:
+        fig.show()
+    else:
+        os.makedirs(save_path, exist_ok=True)
+        fig.savefig(save_path + name)
+        plt.close(fig)
+    
 
 def plot_mvn_marginals(model,
                       params: List,
