@@ -11,9 +11,9 @@ import itertools
 import time
 
 from multi_mdn import SharedEmbedMultiMDN, train_multi_mdn, get_multiMDN_cdf_vals
-from gen_gmm import GMM, train_GMM_generator, sample_GMM_gen, gmm_marg_cdf
+from gen_gmm_GS import GMM, train_GMM_generator, sample_GMM_gen, gmm_marg_cdf, chol_pars_to_L
 from data import gen_mv_normal_normal_data, mvn_posterior, get_true_cdf, get_true_quantiles
-from plots import plot_loss, plot_losses, plot_multi_mvn_marginals, plot_post_pairs, plot_marginal_hists
+from plots import plot_loss, plot_multi_mvn_marginals, plot_post_pairs, plot_marginal_hists
 from utils import save_gen
 from mdn_inv import multi_mdn_inv_marg
 
@@ -29,9 +29,9 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="GMM_gen/normal_test4/")
+parser.add_argument('--folder', type=str, default="GMM_gen/normal_test5/")
 parser.add_argument("--seed", type=int, default=1)
-parser.add_argument("--comment", type=str, default="Componentwise sampling of GMM")
+parser.add_argument("--comment", type=str, default="Gumble Softmax")
 
 # data
 parser.add_argument('--d', type=int, default=10)
@@ -55,7 +55,7 @@ parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=2*[8])
 parser.add_argument("--gen_epochs", type=int, default=100)
 parser.add_argument("--gen_batch_size", type=int, default=1000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument('--gen_L_mc', type=int, default=20)
+parser.add_argument('--gen_L_mc', type=int, default=200)
 parser.add_argument("--gen_early_stop", type=int, default=1000)
 
 # test
@@ -228,8 +228,7 @@ plot_post_pairs(
 )
 
 # map into learned copula space
-
-v = gmm_marg_cdf(y_samples, logits, means, chol_pars)
+v = gmm_marg_cdf(y_samples, logits, means, chol_pars_to_L(chol_pars, d))
 
 print("plot v marginal hists")
 # should be uniform if MDNs learned correctly
@@ -306,7 +305,7 @@ logits, means, chol_pars = gen.apply(gen_state.params, x_samples)
 y_samples = sample_GMM_gen(next(keys), n, logits, means, chol_pars) # (B, n, d)
 
 # map into learned copula space
-v = gmm_marg_cdf(y_samples, logits, means, chol_pars)
+v = gmm_marg_cdf(y_samples, logits, means, chol_pars_to_L(chol_pars, d))
 
 # map into parameter space
 if post_learn_cdf:

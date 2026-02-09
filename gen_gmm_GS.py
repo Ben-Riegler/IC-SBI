@@ -63,7 +63,7 @@ class GMM(nn.Module):
 def chol_pars_to_L(chol_pars, # (batch, K, l_lmnts)
                    d                 
                    ):
-    
+
     batch, K, l_lmnts = chol_pars.shape
 
     # d = int((jnp.sqrt(1 + 8 * l_lmnts) - 1) / 2)
@@ -126,12 +126,11 @@ def gmm_marg_cdf_batch(y, # (batch, K, L_mc, d)
 def gmm_marg_cdf(y, # (batch, N, d)
                  logits, # (batch, K)
                  means, # (batch, K, d)
-                 chol_pars # (batch, K, d, d)
+                 Ls # (batch, K, d, d)
                  ):
     
     B, K, d = means.shape
     pis = softmax(logits, axis=-1)  # (batch, K)
-    Ls = chol_pars_to_L(chol_pars, d)
     stds = jnp.sqrt(jnp.sum(Ls**2, axis=-1))  # (batch, K, d)
 
     y_exp    = y[:, :, None, :]            # (batch, N, 1, d)
@@ -146,40 +145,50 @@ def gmm_marg_cdf(y, # (batch, N, d)
     return F
 
 def ED(u, # (batch, d)
-       v, # (batch, K, L_mc, d)
-       pis, # (batch, K)
+       v, # (batch, L_mc, d)
        ):
-    B, K, L_mc, d = v.shape
-    M = K * L_mc # we will work with this new index to avoid a redundant axis
-    v = jnp.reshape(v, (B, M, d)) # (batch, M, d)
-    duv = jnp.linalg.norm(u[:, None]-v, axis=-1) # (batch, M)
+    B, L_mc, d = v.shape
+    
+    duv = jnp.linalg.norm(u[:, None]-v, axis=-1) # (batch, L_mc)
+    _A = jnp.mean(duv, axis=-1) # (batch)
 
-    # need the weight L_mc times
-    w = jnp.repeat(pis / L_mc, repeats=L_mc, axis=1)   # (batch, M)
+    i_idx, j_idx = jnp.triu_indices(L_mc, k=1) # upper triangular indices 
 
-    _A = jnp.sum(w * duv, axis=-1) # (batch)
-
-    i_idx, j_idx = jnp.triu_indices(M, k=1) # upper triangular indices 
-
-    dvv = jnp.linalg.norm(v[:, i_idx] - v[:, j_idx], axis=-1) # (batch, P), P = (M^2-M)/2
-
-    wij =  w[:, i_idx] * w[:, j_idx] # (batch, P)
-
-    # renormalize for removing diagonal
-    _B = jnp.sum(wij * dvv, axis=-1) / jnp.sum(wij, axis=-1) # (batch)
+    dvv = jnp.linalg.norm(v[:, i_idx] - v[:, j_idx], axis=-1) # (batch, L_mc)
+    _B = jnp.mean(dvv, axis=-1) # (batch)
 
     ed = jnp.mean(2*_A - _B)
 
     return ed # ()
 
+def gumble_softmax(key, logits, # (B, L, K)
+                   temp, one_hot=True):
+
+    key, g_key = random.split(key)
+
+    g = random.gumbel(g_key, logits.shape) # (B, L, K)
+
+    s = (g + logits) / temp
+
+    s_weights = softmax(s, axis=-1)
+
+    if one_hot:
+        # we want to work with the one hot while only showing the auto diff the softmax
+        one_hot_weights = jax.nn.one_hot(jnp.argmax(s_weights, axis=-1), num_classes=s_weights.shape[-1], axis = -1)
+        s_weights = jax.lax.stop_gradient(one_hot_weights - s_weights) + s_weights
+
+    return s_weights 
+
 # jit and free up buffer of state since it will not be used anymore after this call 
 @partial(jax.jit, donate_argnames="state", static_argnames="L_mc")
-def train_step(eps_key: random.PRNGKey,
+def train_step(key: random.PRNGKey,
                state: train_state.TrainState,
                u: jnp.ndarray, # (batch, d)
                x: jnp.ndarray, # (batch, x_dim)
                L_mc: int,
               ) -> Tuple[train_state.TrainState, jnp.ndarray]:
+    
+    key, g_key, eps_key = random.split(key, 3)
 
     def loss_fn(params):
 
@@ -189,11 +198,17 @@ def train_step(eps_key: random.PRNGKey,
         pis = softmax(logits, axis=-1)
 
         # sample learned copula
-        eps = random.normal(eps_key, (B, K, L_mc, d))
-        y = means[:, :, None, :] + jnp.einsum("bkij, bkmj->bkmi", Ls, eps) # (batch, K, L_mc, d)
-        v = gmm_marg_cdf_batch(y, pis, means, Ls) # (batch, K, L_mc, d)
+        logits_exp = jnp.broadcast_to(logits[:, None, :], (B, L_mc, K))
+        z = gumble_softmax(g_key, logits_exp, temp=0.5, one_hot=True) # (batch, L_mc, K)
 
-        ed = ED(u, v, pis)
+        eps = random.normal(eps_key, (B, L_mc, d))
+        # select only the means of components sampled (z), 
+        # select only choleskys of comps sampled and reduce over columns (j)
+        y = jnp.einsum("blk, bkd->bld", z, means) + jnp.einsum("blk, bkij, blj->bli", z, Ls, eps) # (batch, L_mc, d)
+
+        v = gmm_marg_cdf(y, logits, means, Ls) # (batch, L_mc, d)
+
+        ed = ED(u, v)
 
         return ed
 
@@ -259,7 +274,7 @@ def train_GMM_generator(keys: map,
             #     val_loss = val_loss_fn(state=state, u = u_val, x = x_val, z = z_val)
             #     val_losses.append(val_loss)
 
-            state, loss = train_step(eps_key=next(keys), # eps_key=next(keys),
+            state, loss = train_step(key=next(keys), # eps_key=next(keys),
                                      state=state, u=u_batch, x=x_batch, L_mc=L_mc)
             losses.append(loss)
         
@@ -286,14 +301,14 @@ if __name__ == "__main__":
     root_key = random.key(3)
     keys = map(partial(random.fold_in, root_key), itertools.count())
 
-    path = "gmm_gen/"
+    path = "gmm_gen_gs/"
 
     N = 1000
     d = 3
     n_epochs = 100
 
     batch_size = 1000
-    L_mc = 20
+    L_mc = 200
     
     u = random.uniform(next(keys), (N, d))
     x = random.normal(next(keys), (N, d))
@@ -301,7 +316,7 @@ if __name__ == "__main__":
     # u_val = random.uniform(next(keys), (N_val, d))
     # x_val = random.normal(next(keys), (N_val, d))
 
-    model = GMM(hidden_dims=2*[8], K=10, d=d)
+    model = GMM(hidden_dims=2*[8], K=2, d=d)
 
     state, losses = train_GMM_generator(keys, 
                                         model, 
