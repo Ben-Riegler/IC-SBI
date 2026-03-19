@@ -1037,7 +1037,8 @@ def plot_marginal_hists(u, # (batch, N, d)
                         x, # (batch, d)
                         save_path=None,
                         title=rf"Histograms of $U_j = F_j(Y_j \mid x)$",
-                        name="marg_hists.pdf"
+                        name="marg_hists.pdf",
+                        bins=50
                         ):
 
     locs, N, d = u.shape
@@ -1047,7 +1048,7 @@ def plot_marginal_hists(u, # (batch, N, d)
         for col in range(locs):
             ax = axes[row, col]
 
-            ax.hist(u[col, :, row], bins=50, density=True)
+            ax.hist(u[col, :, row], bins=bins, density=True)
 
             if col == 0:
                 ax.set_ylabel(f"dim {row+1}")

@@ -29,43 +29,45 @@ os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 parser = argparse.ArgumentParser()
 
 # prelim
-parser.add_argument('--folder', type=str, default="GMM_gen/normal_test5/")
+parser.add_argument('--folder', type=str, default="GMM_gen/normal_test25/")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--comment", type=str, default="Gumble Softmax")
 
 # data
 parser.add_argument('--d', type=int, default=10)
-parser.add_argument('--N', type=int, default=1000)
+parser.add_argument('--N', type=int, default=100000)
 parser.add_argument('--N_val', type=int, default=1000)
 
-# MDNs set up
+# post MDNs set up
 parser.add_argument('--mdn_lr', type=float, default=1e-3)
 parser.add_argument("--post_learn_cdf", type=str2bool, default="True")
 parser.add_argument('--post_mdn_K', type=int, default=1)
 parser.add_argument('--post_mdn_hidden',  nargs='+', type=int, default=1*[16])
-parser.add_argument('--post_mdn_epochs', type=int, default=1000)
-parser.add_argument('--post_mdn_batch_size', type=int, default=1000)
+parser.add_argument('--post_mdn_epochs', type=int, default=2500)
+parser.add_argument('--post_mdn_batch_size', type=int, default=100000)
 parser.add_argument("--post_early_stop", type=int, default=100)
 
-# generator architecture
+# lat MDN architecture
 parser.add_argument("--gen_K", type=int, default=1)
-parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=2*[8])
+parser.add_argument('--gen_hidden_dims',  nargs='+', type=int, default=1*[16])
 
 # generator training
-parser.add_argument("--gen_epochs", type=int, default=100)
-parser.add_argument("--gen_batch_size", type=int, default=1000)
+parser.add_argument("--gen_epochs", type=int, default=600)
+parser.add_argument("--gen_batch_size", type=int, default=50000)
 parser.add_argument('--gen_lr', type=float, default=1e-3)
-parser.add_argument('--gen_L_mc', type=int, default=200)
+parser.add_argument('--gen_L_mc', type=int, default=50)
 parser.add_argument("--gen_early_stop", type=int, default=1000)
 
 # test
 parser.add_argument("--N_test", type=int, default=1000)
+parser.add_argument("--test_locs", type=int, default=20)
+
 
 args = parser.parse_args()
 
 # set up and data
 path = "experiments/" + args.folder
-os.makedirs(path, exist_ok=True)
+os.makedirs(path, exist_ok=False)
 
 # save config
 arg_dict = vars(args)
@@ -204,7 +206,7 @@ plot_loss(losses, path+"gen/")
 
 print("\n----------Test model----------\n")
 # test: posterior sampling
-test_locs = 4
+test_locs = args.test_locs
 N_test = args.N_test
 
 test_ids = random.choice(next(keys), N_val, (test_locs,))
@@ -217,22 +219,22 @@ logits, means, chol_pars = gen.apply(gen_state.params, x_test)
 y_samples = sample_GMM_gen(next(keys), N_test, logits, means, chol_pars) # (test_locs, N_test, d)
 
 print("plot y marginal hists")
-plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
+# plot_marginal_hists(y_samples, x_test, save_path=path + "y_mdn/", title=rf"$p(y_j \mid x)$", name="y_marg_hist.pdf")
 
-plot_post_pairs(
-    theta=y_samples,
-    x_vals=x_test,
-    save_dir=os.path.join(path, "y_mdn/pairplots"),
-    file_prefix="bivariate_samples",
-    ax_lab=rf"y",
-)
+# plot_post_pairs(
+  #  theta=y_samples,
+   # x_vals=x_test,
+    #save_dir=os.path.join(path, "y_mdn/pairplots"),
+    #file_prefix="bivariate_samples",
+    #ax_lab=rf"y",
+#)
 
 # map into learned copula space
 v = gmm_marg_cdf(y_samples, logits, means, chol_pars_to_L(chol_pars, d))
 
 print("plot v marginal hists")
 # should be uniform if MDNs learned correctly
-plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf")
+# plot_marginal_hists(v, x_test, save_path= path + "y_mdn/", name="marg_y_cop_hist.pdf", bins=10)
 
 # map into parameter space
 if post_learn_cdf:
@@ -248,14 +250,14 @@ cov_gt = jnp.repeat(post_var_val[None, ...], axis=0, repeats=test_locs) # (test_
 
 print("plot post pairs")
 
-plot_post_pairs(
-    theta=theta,
-    x_vals=x_test,
-    post_mean=mu_gt,
-    post_cov=cov_gt,
-    save_dir=os.path.join(path, "pairplots"),
-    file_prefix="posterior_pairs",
-)
+#plot_post_pairs(
+#    theta=theta,
+#    x_vals=x_test,
+#    post_mean=mu_gt,
+####    post_cov=cov_gt,
+#    save_dir=os.path.join(path, "pairplots"),
+#    file_prefix="posterior_pairs",
+#)
 
 # generate true posterior sample
 eps = random.normal(next(keys), (test_locs, N_test, d)) # (test_locs, N_test, d)
@@ -264,23 +266,23 @@ L_post = jnp.linalg.cholesky(cov_gt) # (test_loc, d, d)
 
 theta_true = mu_gt[:, None] + jnp.einsum("tnij, tnj -> tni", L_post[:, None], eps) # (test_locs, N_test, d)
 
-plot_post_pairs(
-    theta=theta_true,
-    x_vals=x_test,
-    post_mean=mu_gt,
-    post_cov=cov_gt,
-    save_dir=os.path.join(path, "pairplots"),
-    file_prefix="true_posterior_pairs",
-)
+#plot_post_pairs(
+ #   theta=theta_true,
+#    x_vals=x_test,
+#    post_mean=mu_gt,
+#    post_cov=cov_gt,
+#    save_dir=os.path.join(path, "pairplots"),
+#    file_prefix="true_posterior_pairs",
+#)
 
 print("\npairplots saved\n")
 
-# print("Performing C2ST")
+print("Performing C2ST")
 
 t0 = time.perf_counter()
 scores = [round(float(c2st_jax(keys, theta[i], theta_true[i])), 2) for i in range(test_locs)]
 t1 = time.perf_counter()
-print(scores, f"{t1-t0:.2f}s")
+print(scores, jnp.stack(scores).mean(),f"{t1-t0:.2f}s")
 
 # # t0 = time.perf_counter()
 # # scores = [round(float(c2st(keys, theta[i], theta_true[i])[0]), 2) for i in range(test_locs)]
@@ -289,6 +291,7 @@ print(scores, f"{t1-t0:.2f}s")
 
 with open(path + "metrics.txt", "w") as f:
     f.write(f"C2ST scores  {scores}")
+    f.write(f"C2ST mean  {jnp.stack(scores).mean()}")
 
 
 print("performing SBC")
@@ -317,7 +320,12 @@ else:
 
 sbc_path = path + "sbc/"
 os.makedirs(sbc_path, exist_ok=True)
+t0 = time.perf_counter()
+print(prior_samples.shape, theta.shape)
+print(prior_samples.dtype, theta.dtype)
 sbc(prior_samples=prior_samples, post_samples=theta, save_path=sbc_path)
+t1 = time.perf_counter()
+print(f"This took {t1-t0:.2f}s")
 
 print("done!")
 

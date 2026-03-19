@@ -20,6 +20,17 @@ class standardize(nn.Module):
 
         return (x - self.mean) / ( self.std)
 
+def standardize_cols(X, mean=None, std=None):
+    """
+    Standardize each column of X to have mean 0 and std 1.
+    Returns the standardized X, along with the column means and stds.
+    """
+    if mean is None:
+        mean = jnp.mean(X, axis=0, keepdims=True) # (1, d)
+    if std is None:
+        std = jnp.std(X, axis=0, keepdims=True) + 1e-8 # (1, d)
+    X_std = (X - mean) / std
+    return X_std, mean, std
 
 
 def str2bool(flag):

@@ -20,84 +20,238 @@ import itertools
 from typing import Tuple
 import time
 
+import os
+from functools import partial
 
-def sbc(prior_samples, # (B, theta_dim)
-        post_samples, # (B, n, theta_dim)
-        save_path = None
-        ):
-    
+import jax
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
+from scipy.stats import binom
+
+
+@jax.jit
+def r_ecdf(prior_samples, post_samples):
+    """
+    Compute rank ECDF for simulation-based calibration.
+
+    Parameters
+    ----------
+    prior_samples : (B, d)
+    post_samples  : (B, n, d)
+
+    Returns
+    -------
+    rank_ecdf : (n+1, d)
+    """
     B, n, d = post_samples.shape
 
-    x = jnp.arange(n+1)
-    x2 = jnp.repeat(x, 2)  
-    
-    rank_ecdf = r_ecdf(prior_samples=prior_samples, post_samples=post_samples) # (B, d)
+    # Rank = number of posterior samples strictly less than the prior sample
+    ranks = jnp.sum(post_samples < prior_samples[:, None, :], axis=1)  # (B, d)
 
-    unif_cdf = jnp.arange(n+2) / (n+1)
-    u2 = jnp.repeat(unif_cdf, 2)[1:-1]
+    # Count occurrences of each rank 0..n
+    vmaped_bc = jax.vmap(
+        fun=partial(jnp.bincount, length=n + 1),
+        in_axes=1,
+        out_axes=1,
+    )
+    counts = vmaped_bc(ranks)  # (n+1, d)
 
-    uu = binom.ppf(0.995, B, jnp.arange(1,n+2)/(n+1)) / B
-    uu = jnp.repeat(uu, 2, axis=0)[:-1]
-    u_u = jnp.concat([jnp.zeros(1), uu])
+    rank_ecdf = jnp.cumsum(counts, axis=0) / B  # (n+1, d)
 
-    ul = binom.ppf(0.005, B, jnp.arange(1,n+2)/(n+1)) / B
-    ul = jnp.repeat(ul, 2, axis=0)[:-1]
-    u_l = jnp.concat([jnp.zeros(1), ul])
+    return rank_ecdf
 
-    ud_u = u_u - u2
-    ud_l = u_l - u2
 
+def _binom_bands(B, n, ci_level=0.99):
+    """
+    Exact binomial confidence bands (computed once on CPU via SciPy).
+
+    Returns
+    -------
+    ci_upper, ci_lower : jnp.ndarray, shape (n+1,)
+    """
+    import numpy as np
+
+    alpha_lo = (1.0 - ci_level) / 2.0
+    alpha_hi = 1.0 - alpha_lo
+    p_vals = np.arange(1, n + 2) / (n + 1)
+
+    ci_upper = binom.ppf(alpha_hi, B, p_vals) / B
+    ci_lower = binom.ppf(alpha_lo, B, p_vals) / B
+
+    return jnp.array(ci_upper), jnp.array(ci_lower)
+
+
+def sbc(
+    prior_samples,  # (B, d)
+    post_samples,   # (B, n, d)
+    save_path=None,
+    param_names=None,
+    ci_level=0.99,
+):
+    """
+    Simulation-Based Calibration check with rank ECDF plots.
+
+    Parameters
+    ----------
+    prior_samples : jnp.ndarray, shape (B, d)
+    post_samples  : jnp.ndarray, shape (B, n, d)
+    save_path     : str or None — directory to save PDFs (None → plt.show)
+    param_names   : list[str] or None — names for each dimension
+    ci_level      : float — confidence level for the binomial band (default 0.99)
+    """
+    B, n, d = post_samples.shape
+
+    if param_names is None:
+        param_names = [f"dim {i}" for i in range(d)]
+
+    if save_path is not None:
+        os.makedirs(save_path, exist_ok=True)
+
+    # ---- rank ECDF (JIT-compiled) ----
+    rank_ecdf = r_ecdf(prior_samples, post_samples)  # (n+1, d)
+
+    # ---- reference uniform CDF ----
+    unif_cdf = jnp.arange(1, n + 2) / (n + 1)  # (n+1,)
+
+    # ---- exact binomial confidence band (computed once) ----
+    ci_upper, ci_lower = _binom_bands(B, n, ci_level)  # (n+1,) each
+
+    # ---- step-function x coordinates ----
+    x = jnp.arange(n + 1)
+    x2 = jnp.repeat(x, 2)
+
+    # Build doubled step arrays (shared across dimensions)
+    u2 = jnp.concatenate([jnp.zeros(1), jnp.repeat(unif_cdf, 2)[:-1]])
+    u_upper = jnp.concatenate([jnp.zeros(1), jnp.repeat(ci_upper, 2)[:-1]])
+    u_lower = jnp.concatenate([jnp.zeros(1), jnp.repeat(ci_lower, 2)[:-1]])
+    ud_upper = u_upper - u2
+    ud_lower = u_lower - u2
+
+    # ---- per-dimension plots ----
     plt.close("all")
     for dim in range(d):
-       
-        y2 = jnp.repeat(rank_ecdf[:, dim], 2, axis=0)[:-1]
-        y2 = jnp.concat([jnp.zeros(1), y2])
+        ecdf_vals = rank_ecdf[:, dim]  # (n+1,)
+        y2 = jnp.concatenate([jnp.zeros(1), jnp.repeat(ecdf_vals, 2)[:-1]])
 
-        plt.fill_between(x2, u_u, u_l, label="approx 90% CI", color="grey", alpha=0.25)
-
-        
-        plt.plot(x2, u2, label="unif_cdf", color = "darkgrey") 
-        plt.plot(x2, y2, label="r_ecdf") 
-
-        plt.legend()
-
-        if save_path is None:
-            plt.show()
-        else:
-            plt.savefig(save_path+f"r_ecdf_d={dim}.pdf")
-            plt.close()
-
-        diff2 = y2-u2
-
-        plt.fill_between(x2, ud_l, ud_u, color="grey", alpha=0.25)
-        plt.plot(x2, diff2, label="ecdf deviation")
-        plt.legend()
+        # --- ECDF plot ---
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.fill_between(
+            x2, u_upper, u_lower,
+            label=f"approx {ci_level * 100:.0f}% CI",
+            color="grey", alpha=0.25,
+        )
+        ax.plot(x2, u2, label="Uniform CDF", color="darkgrey")
+        ax.plot(x2, y2, label="Rank ECDF")
+        ax.set_xlabel("Rank")
+        ax.set_ylabel("ECDF")
+        ax.set_title(f"SBC — {param_names[dim]}")
+        ax.legend(fontsize=8)
 
         if save_path is None:
             plt.show()
         else:
-            plt.savefig(save_path+f"ecdf_dev_d={dim}.pdf")
-            plt.close()
-        
+            fig.savefig(os.path.join(save_path, f"r_ecdf_d={dim}.pdf"))
+        plt.close(fig)
 
+        # --- Deviation plot ---
+        diff2 = y2 - u2
 
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.fill_between(
+            x2, ud_lower, ud_upper,
+            color="grey", alpha=0.25,
+            label=f"approx {ci_level * 100:.0f}% CI",
+        )
+        ax.plot(x2, diff2, label="ECDF deviation")
+        ax.axhline(0.0, color="darkgrey", ls="--", lw=0.8)
+        ax.set_xlabel("Rank")
+        ax.set_ylabel("ECDF − Uniform")
+        ax.set_title(f"SBC deviation — {param_names[dim]}")
+        ax.legend(fontsize=8)
 
-def r_ecdf(prior_samples, # (B, theta_dim)
-        post_samples, # (B, n, theta_dim)
-        ):
+        if save_path is None:
+            plt.show()
+        else:
+            fig.savefig(os.path.join(save_path, f"ecdf_dev_d={dim}.pdf"))
+        plt.close(fig)
+
+# def sbc(prior_samples, # (B, theta_dim)
+#         post_samples, # (B, n, theta_dim)
+#         save_path = None
+#         ):
     
-    B, n, d = post_samples.shape
+#     B, n, d = post_samples.shape
+
+#     x = jnp.arange(n+1)
+#     x2 = jnp.repeat(x, 2)  
+    
+#     rank_ecdf = r_ecdf(prior_samples=prior_samples, post_samples=post_samples) # (B, d)
+
+#     unif_cdf = jnp.arange(n+2) / (n+1)
+#     u2 = jnp.repeat(unif_cdf, 2)[1:-1]
+
+#     uu = binom.ppf(0.995, B, jnp.arange(1,n+2)/(n+1)) / B
+#     uu = jnp.repeat(uu, 2, axis=0)[:-1]
+#     u_u = jnp.concat([jnp.zeros(1), uu])
+
+#     ul = binom.ppf(0.005, B, jnp.arange(1,n+2)/(n+1)) / B
+#     ul = jnp.repeat(ul, 2, axis=0)[:-1]
+#     u_l = jnp.concat([jnp.zeros(1), ul])
+
+#     ud_u = u_u - u2
+#     ud_l = u_l - u2
+
+#     plt.close("all")
+#     for dim in range(d):
+       
+#         y2 = jnp.repeat(rank_ecdf[:, dim], 2, axis=0)[:-1]
+#         y2 = jnp.concat([jnp.zeros(1), y2])
+
+#         plt.fill_between(x2, u_u, u_l, label="approx 90% CI", color="grey", alpha=0.25)
+
+        
+#         plt.plot(x2, u2, label="unif_cdf", color = "darkgrey") 
+#         plt.plot(x2, y2, label="r_ecdf") 
+
+#         plt.legend()
+
+#         if save_path is None:
+#             plt.show()
+#         else:
+#             plt.savefig(save_path+f"r_ecdf_d={dim}.pdf")
+#             plt.close()
+
+#         diff2 = y2-u2
+
+#         plt.fill_between(x2, ud_l, ud_u, color="grey", alpha=0.25)
+#         plt.plot(x2, diff2, label="ecdf deviation")
+#         plt.legend()
+
+#         if save_path is None:
+#             plt.show()
+#         else:
+#             plt.savefig(save_path+f"ecdf_dev_d={dim}.pdf")
+#             plt.close()
+        
+
+
+
+# def r_ecdf(prior_samples, # (B, theta_dim)
+#         post_samples, # (B, n, theta_dim)
+#         ):
+    
+#     B, n, d = post_samples.shape
    
-    samples = jnp.concatenate([prior_samples[:, None], post_samples], axis=1) # (B, n+1, theta_dim)
-    idcs = jnp.argsort(samples, axis=1) # indices that sort samples, 0 is prior sample
-    ranks = jnp.argsort(idcs, axis=1)[:, 0, :] # (B, theta_dim) # position of index 0 in idcs is rank of samples[0]
+#     samples = jnp.concatenate([prior_samples[:, None], post_samples], axis=1) # (B, n+1, theta_dim)
+#     idcs = jnp.argsort(samples, axis=1) # indices that sort samples, 0 is prior sample
+#     ranks = jnp.argsort(idcs, axis=1)[:, 0, :] # (B, theta_dim) # position of index 0 in idcs is rank of samples[0]
 
-    vmaped_bc = jax.vmap(fun=partial(jnp.bincount, length=n+1), in_axes=1, out_axes=1) # count ranks 0, ..., n
-    counts = vmaped_bc(ranks)
+#     vmaped_bc = jax.vmap(fun=partial(jnp.bincount, length=n+1), in_axes=1, out_axes=1) # count ranks 0, ..., n
+#     counts = vmaped_bc(ranks)
 
-    rank_ecdf = jnp.cumsum(counts, axis=0) / B # (B, theta_dim)
+#     rank_ecdf = jnp.cumsum(counts, axis=0) / B # (B, theta_dim)
 
-    return rank_ecdf 
+#     return rank_ecdf 
 
 # This code is taken directly from https://github.com/sbi-benchmark/sbibm/blob/main/sbibm/metrics/c2st.py
 # Minor modifications have been made make it JAX compatible

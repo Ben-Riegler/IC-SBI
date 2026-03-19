@@ -184,3 +184,50 @@ def sample_two_moons_posterior(key, x, n_samples, prior_low, prior_high):
     theta_all = jnp.concatenate(collected, axis=0)[:n_samples]
     return theta_all
 
+
+def gen_mixed_prior_binomial_normal_data(key, n_samples, dependence=False):
+    """
+    DGP:
+        t1 ~ N(0, 1)
+        t2 ~ Gamma(1, 1)      [shape=1, rate=1]
+        t3 ~ Beta(2, 3)
+        c  ~ Binomial(20, t3)
+        z  ~ N(t1, t2)
+        x  = c + z
+
+    Returns
+    -------
+    x_data : (n_samples, 1)
+    theta_data : (n_samples, 3)   columns are [t1, t2, t3]
+    """
+    k1, k2, k3, k4, k5 = random.split(key, 5)
+
+    # prior draws
+    if not dependence:
+        t1 = random.normal(k1, (n_samples,))                          # N(0,1)
+        t2 = random.gamma(k2, 1.0, (n_samples,))                      # Gamma(shape=1, rate=1) = Exp(1)
+        t3 = random.beta(k3, 2.0, 3.0, shape=(n_samples,))            # Beta(2,3)
+    else:
+        # t1 ~ N(0,1)
+        t1 = random.normal(k1, (n_samples,))
+
+        # t2 | t1 ~ Gamma(shape=1, rate=1) * exp(0.5*t1)  
+        # i.e. scale depends on t1: large |t1| → larger t2
+        t2_base = random.gamma(k2, 1.0, (n_samples,))
+        t2 = t2_base * jnp.exp(0.5 * t1)
+
+        # t3 | t2 ~ Beta(2, 1 + 2*sigmoid(t2))
+        # i.e. large t2 → larger second param → t3 shifts toward 0
+        b_param = 1.0 + 2.0 * jax.nn.sigmoid(t2)
+        t3 = random.beta(k3, 2.0, b_param, shape=(n_samples,))
+
+    # simulator
+    c = random.binomial(k4, n=20, p=t3).astype(t1.dtype)          # Bin(20, t3)
+    z = t1 + jnp.sqrt(t2) * random.normal(k5, (n_samples,))       # N(t1, t2) — t2 is variance
+
+    x = c + z
+
+    theta_data = jnp.stack([t1, t2, t3], axis=-1)  # (n_samples, 3)
+    x_data = x[:, None]                             # (n_samples, 1)
+
+    return x_data, theta_data

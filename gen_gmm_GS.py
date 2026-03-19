@@ -11,11 +11,12 @@ from jax.scipy.stats import norm
 from functools import partial
 import itertools
 from jax.nn import softmax
-jax.config.update("jax_enable_x64", True)
+import chex
+jax.config.update("jax_enable_x64", False)
 
-from data import gen_mv_normal_normal_data, mvn_posterior
-from plots import plot_mvn_marginals, plot_loss
-from utils import save_gen, standardize
+
+from plots import plot_loss
+from utils import save_gen
 
 os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 
@@ -155,6 +156,11 @@ def ED(u, # (batch, d)
     i_idx, j_idx = jnp.triu_indices(L_mc, k=1) # upper triangular indices 
 
     dvv = jnp.linalg.norm(v[:, i_idx] - v[:, j_idx], axis=-1) # (batch, L_mc)
+
+    # Check if any dvv entries are exactly zero
+    # n_zeros = jnp.sum(dvv == 0.0)
+    # jax.debug.print("dvv zeros: {n}, dvv min: {m}", n=n_zeros, m=jnp.min(dvv))
+    
     _B = jnp.mean(dvv, axis=-1) # (batch)
 
     ed = jnp.mean(2*_A - _B)
@@ -195,7 +201,6 @@ def train_step(key: random.PRNGKey,
         logits, means, chol_pars = state.apply_fn(params, x)
         B, K, d = means.shape
         Ls = chol_pars_to_L(chol_pars, d) # (batch, K, d, d)
-        pis = softmax(logits, axis=-1)
 
         # sample learned copula
         logits_exp = jnp.broadcast_to(logits[:, None, :], (B, L_mc, K))
@@ -225,7 +230,7 @@ def create_train_state(key: Any, model: GMM,
     """Initial training state, will be updated in `train_step`"""
 
     params = model.init(key, jnp.zeros(x_shape)) # model is stateless, not affected by calling init
-    tx     = optax.adam(learning_rate)
+    tx     = optax.adamw(learning_rate)
     # tx = optax.sgd(learning_rate, momentum=0.9)
 
     return train_state.TrainState.create(

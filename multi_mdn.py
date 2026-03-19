@@ -17,6 +17,58 @@ from utils import save_multiMDN
 
 jax.config.update("jax_enable_x64", True)
 
+# class SharedEmbedMultiMDN(nn.Module):
+#     var_dim: int
+#     hidden_dims: List[int]
+#     K: int
+
+#     def setup(self):
+#         # vmaped dimension heads
+#         self.BatchDense = nn.vmap(nn.Dense,
+#                             in_axes=None, # all share input, no axis assignment here
+#                             out_axes=-2,
+#                             axis_size=self.var_dim,
+#                             variable_axes={"params": 0},
+#                             split_rngs={"params": True}
+#                             )
+
+#     @nn.compact
+#     def __call__(self, 
+#                  x: jnp.ndarray # (B, x_dim)
+#                 ) -> Tuple[jnp.ndarray,jnp.ndarray,jnp.ndarray]:
+#         h = x 
+
+#         # feature extactor shared across variable dims
+#         for dim in self.hidden_dims[:-1]:
+#             h = nn.Dense(dim)(h)
+#             h = nn.relu(h)
+#         h = nn.Dense(self.hidden_dims[-1])(h)
+
+#         init_small_w = nn.initializers.normal(stddev=1e-3)
+#         init_zero_b = nn.initializers.constant(0.)
+
+#         # independent head for each variable dim
+
+#         logits = self.BatchDense(self.K)(h) # (B, var_dim, K)
+#         means = self.BatchDense(self.K,
+#                             kernel_init=init_small_w, 
+#                             bias_init=init_zero_b
+#                             )(h)
+#         log_scales = self.BatchDense(self.K, 
+#                                 kernel_init=init_small_w, 
+#                                 bias_init=init_zero_b
+#                                 )(h) 
+
+#         # const variance inductive bias
+#         const = jnp.ones_like(h, dtype=h.dtype)   # (B, 1)
+#         log_scales = self.BatchDense(self.K,
+#                                     kernel_init=init_small_w,
+#                                     bias_init=init_zero_b
+#                                     )(const)               # (B, var_dim, K)
+
+
+#         return logits, means, log_scales
+
 class SharedEmbedMultiMDN(nn.Module):
     var_dim: int
     hidden_dims: List[int]
@@ -31,14 +83,13 @@ class SharedEmbedMultiMDN(nn.Module):
                             variable_axes={"params": 0},
                             split_rngs={"params": True}
                             )
-
     @nn.compact
     def __call__(self, 
-                 x: jnp.ndarray # (B, x_dim)
+                x: jnp.ndarray # (B, x_dim)
                 ) -> Tuple[jnp.ndarray,jnp.ndarray,jnp.ndarray]:
         h = x 
 
-        # feature extactor shared across variable dims
+        # feature extractor shared across variable dims
         for dim in self.hidden_dims[:-1]:
             h = nn.Dense(dim)(h)
             h = nn.relu(h)
@@ -48,26 +99,24 @@ class SharedEmbedMultiMDN(nn.Module):
         init_zero_b = nn.initializers.constant(0.)
 
         # independent head for each variable dim
-
-        logits = self.BatchDense(self.K)(h) # (B, var_dim, K)
+        logits = self.BatchDense(self.K)(h)           # (B, var_dim, K)
         means = self.BatchDense(self.K,
                             kernel_init=init_small_w, 
                             bias_init=init_zero_b
-                            )(h)
-        log_scales = self.BatchDense(self.K, 
-                                kernel_init=init_small_w, 
-                                bias_init=init_zero_b
-                                )(h) 
+                            )(h)                      # (B, var_dim, K)
 
-        # const variance inductive bias
-        # const = jnp.ones_like(h, dtype=h.dtype)   # (B, 1)
-        # log_scales = self.BatchDense(self.K,
-        #                             kernel_init=init_small_w,
-        #                             bias_init=init_zero_b
-        #                             )(const)               # (B, var_dim, K)
-
+        # constant variance: independent of x AND shared across dimensions
+        # learnable free parameter of shape (K,)
+        log_scales_param = self.param(
+        'log_scales',
+        init_zero_b,
+        (1, 1, self.K)
+        )
+        # broadcast to (B, var_dim, K) by multiplying with ones
+        log_scales = jnp.ones_like(means) * log_scales_param
 
         return logits, means, log_scales
+
 
 @jax.jit
 def train_step(state: train_state.TrainState,
@@ -103,7 +152,7 @@ def create_train_state(rng: Any, model,
     """Initial training state, will be updated in `train_step`"""
 
     params = model.init(rng, jnp.zeros((batch_size, d))) # model is stateless, not affected by calling init
-    tx     = optax.adam(learning_rate)
+    tx     = optax.adamw(learning_rate)
     return train_state.TrainState.create(
         apply_fn=model.apply,
         params=params,
