@@ -9,7 +9,7 @@ from itertools import product
 import os
 from typing import List
 from matplotlib.lines import Line2D
-from data import mvn_posterior
+from DGPs.data import mvn_posterior
 from tueplots.bundles import neurips2024
 
 # plt.rcParams.update({

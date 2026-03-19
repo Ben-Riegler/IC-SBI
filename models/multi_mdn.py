@@ -3,16 +3,14 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
-from flax.training import train_state, checkpoints
+from flax.training import train_state
 import optax
 import matplotlib.pyplot as plt
 from typing import List, Any, Tuple
 from jax.scipy.stats import norm
-import matplotlib.pyplot as plt
 import time
-from data import gen_mv_normal_normal_data
-from plots import mvn_posterior, plot_multi_mvn_marginals, plot_mvn_data, plot_loss
-from mdn import MDN
+from DGPs.data import gen_mv_normal_normal_data, mvn_posterior
+from plots import plot_multi_mvn_marginals, plot_mvn_data, plot_loss
 from utils import save_multiMDN
 
 jax.config.update("jax_enable_x64", True)

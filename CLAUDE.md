@@ -29,9 +29,9 @@ Two-step posterior approximation using Sklar's theorem:
 
 | Paper row | Script | MDN | DGP |
 |---|---|---|---|
-| Gaussian (encoding structure) | `normal_exper_gmm_GS.py` | `multi_mdn.py` | Isotropic Normal-Normal conjugate |
-| Bounded Support | `mixed_exper_gmm_GS.py` | `mixed_mdn.py` | N×Gamma×Beta prior, Bin+Normal simulator |
-| Cont. + Discrete | `negbin_exper_gmm_GS.py` | `beta_negbin_gamma_mdn.py` | Beta×NegBin×Gamma prior, Bin+Normal sim |
+| Gaussian (encoding structure) | `experiments/normal_exper_gmm_GS.py` | `models/multi_mdn.py` | Isotropic Normal-Normal conjugate |
+| Bounded Support | `experiments/mixed_exper_gmm_GS.py` | `models/mixed_mdn.py` | N×Gamma×Beta prior, Bin+Normal simulator |
+| Cont. + Discrete | `experiments/negbin_exper_gmm_GS.py` | `models/beta_negbin_gamma_mdn.py` | Beta×NegBin×Gamma prior, Bin+Normal sim |
 
 ### Known Weaknesses
 - **No baselines** — results are uninterpretable without NPE/FMPE comparisons. Need at least FMPE (Wildberger et al.) and Pawsterior (`pdfs/Pawsterior.pdf`)
@@ -43,23 +43,45 @@ Two-step posterior approximation using Sklar's theorem:
 
 ### File Map
 
+**Directory structure:**
+```
+CopSBI/
+├── DGPs/
+│   └── data.py
+├── eval/
+│   ├── abc_reference.py
+│   └── metrics.py
+├── models/
+│   ├── beta_negbin_gamma_mdn.py
+│   ├── gen_gmm_GS.py
+│   ├── mdn_inv.py
+│   ├── mixed_mdn.py
+│   └── multi_mdn.py
+├── experiments/
+│   ├── normal_exper_gmm_GS.py
+│   ├── mixed_exper_gmm_GS.py
+│   └── negbin_exper_gmm_GS.py
+├── plots.py
+└── utils.py
+```
+
+**Experiments should be run from the project root** (e.g., `python -m experiments.normal_exper_gmm_GS`) so that `models/`, `DGPs/`, `eval/`, `plots.py`, and `utils.py` are all importable.
+
 **Core (active):**
-- `gen_gmm_GS.py` — latent GMM (p_φ(y|x) on ℝ^m). Key: `GMM`, `train_GMM_generator`, `sample_GMM_gen`, `gmm_marg_cdf`
-- `multi_mdn.py` — `SharedEmbedMultiMDN` (Gaussian marginals). `get_multiMDN_cdf_vals` for PIT
-- `mixed_mdn.py` — `MixedMarginalMDN` (Gaussian/Gamma/Beta heads). `get_mixed_cdf_vals`, `mixed_mdn_inv_marg` (bisection)
-- `beta_negbin_gamma_mdn.py` — `BetaNegBinGammaMDN` (Beta/NegBin/Gamma). Randomized PIT for discrete NegBin
-- `data.py` — DGPs: `gen_mv_normal_normal_data`, `gen_mixed_prior_binomial_normal_data` (has `dependence` flag), `gen_two_moons_data`
-- `mdn_inv.py` — bisection inversion for Gaussian MDN marginals
-- `metrics.py` — `c2st_jax`, `sbc` (SBC with ECDF plots)
+- `models/gen_gmm_GS.py` — latent GMM (p_φ(y|x) on ℝ^m). Key: `GMM`, `train_GMM_generator`, `sample_GMM_gen`, `gmm_marg_cdf`
+- `models/multi_mdn.py` — `SharedEmbedMultiMDN` (Gaussian marginals). `get_multiMDN_cdf_vals` for PIT
+- `models/mixed_mdn.py` — `MixedMarginalMDN` (Gaussian/Gamma/Beta heads). `get_mixed_cdf_vals`, `mixed_mdn_inv_marg` (bisection)
+- `models/beta_negbin_gamma_mdn.py` — `BetaNegBinGammaMDN` (Beta/NegBin/Gamma). Randomized PIT for discrete NegBin. Also contains `gen_beta_negbin_gamma_data` and `abc_rejection` for that DGP.
+- `models/mdn_inv.py` — bisection inversion for Gaussian MDN marginals
+- `DGPs/data.py` — DGPs: `gen_mv_normal_normal_data`, `gen_mixed_prior_binomial_normal_data` (has `dependence` flag), `gen_two_moons_data`
+- `eval/metrics.py` — `c2st_jax`, `sbc` (SBC with ECDF plots)
+- `eval/abc_reference.py` — ABC rejection sampler (reference posterior for mixed experiment)
 - `plots.py` — plotting helpers
 - `utils.py` — save/load model params
-- `abc_reference.py` — ABC rejection sampler (reference posterior for mixed/negbin experiments)
-
-**Legacy (not used):** `gen.py`, `gen_gmm.py`, `mdn.py`, `normal_exper.py`, `normal_exper_gmm.py`, `two_moons_exper.py`, `ecdf.py`
 
 ### Tech Stack
 - JAX + Flax (linen) + Optax (AdamW)
-- `jax_enable_x64=False` in all experiment scripts; `True` in `data.py` and `multi_mdn.py`
+- `jax_enable_x64=False` in all experiment scripts; `True` in `DGPs/data.py` and `models/multi_mdn.py`
 - Experiments save to `experiments/<folder>/` with `config.txt`, `DGP.npz`, `Pars.npz`, `metrics.txt`
 - Env managed with `uv` (`pyproject.toml`, `uv.lock`)
 
